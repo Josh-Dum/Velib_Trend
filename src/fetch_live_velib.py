@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Any, Dict, List
 
 import requests
-from data_utils import validate_and_sanitize, save_csv
+from src.data_utils import validate_and_sanitize, save_csv
 
 API_URL = "https://opendata.paris.fr/api/explore/v2.1/catalog/datasets/velib-disponibilite-en-temps-reel/records"
 
@@ -30,6 +30,50 @@ def fetch_live(limit: int = 10) -> List[Dict[str, Any]]:
     payload = r.json()
     records = payload.get("results", []) if isinstance(payload, dict) else []
     return records
+
+
+def fetch_live_all(page_size: int = 100, max_pages: int = 50) -> List[Dict[str, Any]]:
+        """Fetch all live Velib station availability by paginating.
+
+        Inputs:
+            - page_size: number of records per page requested from the API
+            - max_pages: safety upper bound on pages to prevent infinite loops
+        Output:
+            - list of all records
+        Notes:
+            - Uses 'limit' and 'offset' pagination.
+            - Stops when a page returns fewer than page_size or max_pages reached.
+        """
+        all_records: List[Dict[str, Any]] = []
+        offset = 0
+        pages = 0
+        while True:
+            params = {
+                "limit": page_size,
+                "offset": offset,
+                "timezone": "Europe/Paris",
+            }
+            try:
+                r = requests.get(API_URL, params=params, timeout=20)
+                r.raise_for_status()
+            except requests.HTTPError as e:
+                # If the provider rejects the page (e.g., limit too high), try a smaller page.
+                if page_size > 50:
+                    page_size = 50
+                    continue
+                raise e
+            payload = r.json()
+            batch = payload.get("results", []) if isinstance(payload, dict) else []
+            if not batch:
+                break
+            all_records.extend(batch)
+            if len(batch) < page_size:
+                break
+            offset += page_size
+            pages += 1
+            if pages >= max_pages:
+                break
+        return all_records
 
 
 essential_fields = [
