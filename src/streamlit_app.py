@@ -12,28 +12,22 @@ st.set_page_config(page_title="Velib Trend — Stations", layout="wide")
 st.title("Velib Trend — Live Stations")
 
 with st.sidebar:
-    st.markdown("Settings")
-    fetch_all = st.checkbox("Fetch all stations", value=True)
+    st.markdown("### Options")
     validate = st.checkbox("Validate & coerce types", value=True)
-    limit = st.slider("Limit (used if not fetching all)", min_value=1, max_value=200, value=50)
-    refresh = st.button("Refresh")
-
+    refresh = st.button("Refresh data")
+    
 @st.cache_data(ttl=60)
-def load_data(fetch_all: bool, validate: bool, limit: int) -> pd.DataFrame:
-    params = {}
-    if fetch_all:
-        params["all"] = "true"
-    else:
-        params["limit"] = str(limit)
+def load_data(validate: bool) -> pd.DataFrame:
+    # Always fetch all stations
+    params = {"all": "true"}
     if validate:
         params["validate"] = "true"
     url = f"{API_BASE}/stations"
-    r = requests.get(url, params=params, timeout=20)
+    r = requests.get(url, params=params, timeout=25)
     r.raise_for_status()
     payload = r.json()
-    recs = payload.get("records", [])
-    df = pd.DataFrame(recs)
-    # Reorder common columns if present
+    records = payload.get("records", [])
+    df = pd.DataFrame(records)
     preferred = [
         "stationcode",
         "name",
@@ -47,10 +41,10 @@ def load_data(fetch_all: bool, validate: bool, limit: int) -> pd.DataFrame:
         "duedate",
         "nom_arrondissement_communes",
     ]
-    cols = [c for c in preferred if c in df.columns] + [c for c in df.columns if c not in preferred]
     if df.empty:
         return df
-    return df[cols]
+    ordered = [c for c in preferred if c in df.columns] + [c for c in df.columns if c not in preferred]
+    return df[ordered]
 
 if refresh:
     load_data.clear()
@@ -58,9 +52,9 @@ if refresh:
 status = st.empty()
 start = time.time()
 try:
-    df = load_data(fetch_all=fetch_all, validate=validate, limit=limit)
+    df = load_data(validate=validate)
     elapsed = time.time() - start
-    status.success(f"Loaded {len(df)} stations in {elapsed:.2f}s from {API_BASE}")
+    status.success(f"Loaded {len(df)} stations (all) in {elapsed:.2f}s from {API_BASE}")
 
     # Compute capacity and availability ratio (simple and safe)
     if not df.empty:
