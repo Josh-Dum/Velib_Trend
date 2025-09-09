@@ -15,7 +15,7 @@ with st.sidebar:
     st.markdown("### Options")
     validate = st.checkbox("Validate & coerce types", value=True)
     refresh = st.button("Refresh data")
-    
+
 @st.cache_data(ttl=60)
 def load_data(validate: bool) -> pd.DataFrame:
     # Always fetch all stations
@@ -56,41 +56,38 @@ try:
     elapsed = time.time() - start
     status.success(f"Loaded {len(df)} stations (all) in {elapsed:.2f}s from {API_BASE}")
 
-    # Compute capacity and availability ratio (simple and safe)
+    # Simple color-coded circles (fixed radius) by availability percentage
     if not df.empty:
-        # Coerce numerics
         df["numbikesavailable"] = pd.to_numeric(df.get("numbikesavailable"), errors="coerce")
         df["numdocksavailable"] = pd.to_numeric(df.get("numdocksavailable"), errors="coerce")
         if "capacity" in df.columns:
             df["capacity"] = pd.to_numeric(df["capacity"], errors="coerce")
         else:
             df["capacity"] = (df["numbikesavailable"].fillna(0) + df["numdocksavailable"].fillna(0))
+        df["capacity"] = df["capacity"].fillna(0)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            pct = df["numbikesavailable"] / df["capacity"].replace(0, np.nan)
+        pct = pct.replace([np.inf, -np.inf], np.nan).fillna(0.0).clip(0, 1)
+        df["pct_bikes"] = pct
 
-        # Safe ratio: avoid division by zero/NA
-        safe_cap = df["capacity"].replace(0, np.nan)
-        df["avail_ratio"] = (df["numbikesavailable"] / safe_cap).replace([np.inf, -np.inf], np.nan)
-        df["avail_ratio"] = df["avail_ratio"].fillna(0.0).clip(lower=0.0, upper=1.0)
+        def pct_to_color(row):
+            # capacity already coerced; treat 0 or NaN as unknown
+            cap = row.get("capacity", 0)
+            if pd.isna(cap) or cap == 0:
+                return [0, 0, 0, 220]  # black
+            v = float(row["pct_bikes"])
+            if v < 0.3:
+                return [230, 57, 70, 220]  # red
+            if v < 0.6:
+                return [253, 180, 70, 220]  # orange-ish
+            return [70, 160, 60, 220]      # green
 
-        # Color mapping (handles NaN as 0.0)
-        def ratio_to_color(r):
-            try:
-                val = float(r)
-            except Exception:
-                val = 0.0
-            if val < 0.3:
-                return [230, 57, 70]  # red
-            if val < 0.6:
-                return [253, 203, 110]  # yellow
-            return [76, 175, 80]  # green
+        # Apply row-wise for clarity
+        df["color"] = df.apply(pct_to_color, axis=1)
 
-        df["color"] = df["avail_ratio"].apply(ratio_to_color)
-
-        # Ensure coords numeric, then drop missing
         df["lat"] = pd.to_numeric(df.get("lat"), errors="coerce")
         df["lon"] = pd.to_numeric(df.get("lon"), errors="coerce")
         map_df = df.dropna(subset=["lat", "lon"]).copy()
-
-        # Center the map on the mean lat/lon (guard against all-NaN)
         if not map_df.empty:
             center_lat = float(np.nanmean(map_df["lat"]))
             center_lon = float(np.nanmean(map_df["lon"]))
@@ -100,22 +97,18 @@ try:
                 data=map_df,
                 get_position="[lon, lat]",
                 get_fill_color="color",
-                get_radius=60,
+                get_radius=55,
                 pickable=True,
-                radius_min_pixels=3,
-                radius_max_pixels=30,
+                radius_min_pixels=4,
+                radius_max_pixels=25,
             )
-
             tooltip = {
-                "html": "<b>{name}</b><br/>Bikes: {numbikesavailable}<br/>Docks: {numdocksavailable}<br/>Ratio: {avail_ratio}",
+                "html": "<b>{name}</b><br/>Bikes: {numbikesavailable}<br/>Docks: {numdocksavailable}",
                 "style": {"backgroundColor": "#1E1E1E", "color": "white"},
             }
-
             view_state = pdk.ViewState(latitude=center_lat, longitude=center_lon, zoom=11)
             deck = pdk.Deck(layers=[layer], initial_view_state=view_state, tooltip=tooltip, map_style="light")
             st.pydeck_chart(deck, use_container_width=True)
 
-    st.markdown("### Sample of stations")
-    st.dataframe(df.head(50), use_container_width=True)
 except Exception as e:
     status.error(f"Error loading data: {e}")
