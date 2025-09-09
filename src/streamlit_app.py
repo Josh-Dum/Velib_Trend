@@ -16,6 +16,26 @@ with st.sidebar:
     validate = st.checkbox("Validate & coerce types", value=True)
     refresh = st.button("Refresh data")
 
+    st.markdown("### Mode")
+    if "mode" not in st.session_state:
+        st.session_state.mode = "bike"
+    mcol1, mcol2 = st.columns(2)
+    rerun_needed = False
+    if mcol1.button("Find a bike", type="primary" if st.session_state.mode == "bike" else "secondary"):
+        if st.session_state.mode != "bike":
+            st.session_state.mode = "bike"
+            rerun_needed = True
+    if mcol2.button("Find a dock", type="primary" if st.session_state.mode == "dock" else "secondary"):
+        if st.session_state.mode != "dock":
+            st.session_state.mode = "dock"
+            rerun_needed = True
+    if rerun_needed:
+        try:
+            st.rerun()
+        except AttributeError:  # fallback for older Streamlit
+            st.experimental_rerun()
+    mode = st.session_state.mode
+
 @st.cache_data(ttl=60)
 def load_data(validate: bool) -> pd.DataFrame:
     # Always fetch all stations
@@ -56,7 +76,7 @@ try:
     elapsed = time.time() - start
     status.success(f"Loaded {len(df)} stations (all) in {elapsed:.2f}s from {API_BASE}")
 
-    # Simple color-coded circles (fixed radius) by availability percentage
+    # Simple color-coded circles (fixed radius) by availability percentage (bike or dock mode)
     if not df.empty:
         df["numbikesavailable"] = pd.to_numeric(df.get("numbikesavailable"), errors="coerce")
         df["numdocksavailable"] = pd.to_numeric(df.get("numdocksavailable"), errors="coerce")
@@ -69,13 +89,21 @@ try:
             pct = df["numbikesavailable"] / df["capacity"].replace(0, np.nan)
         pct = pct.replace([np.inf, -np.inf], np.nan).fillna(0.0).clip(0, 1)
         df["pct_bikes"] = pct
+        with np.errstate(divide='ignore', invalid='ignore'):
+            pctd = df["numdocksavailable"] / df["capacity"].replace(0, np.nan)
+        pctd = pctd.replace([np.inf, -np.inf], np.nan).fillna(0.0).clip(0, 1)
+        df["pct_docks"] = pctd
+
+        # Select metric based on mode
+        mode = st.session_state.get("mode", "bike")
+        metric_col = "pct_bikes" if mode == "bike" else "pct_docks"
+        df["metric"] = df[metric_col]
 
         def pct_to_color(row):
-            # capacity already coerced; treat 0 or NaN as unknown
             cap = row.get("capacity", 0)
             if pd.isna(cap) or cap == 0:
                 return [0, 0, 0, 220]  # black
-            v = float(row["pct_bikes"])
+            v = float(row["metric"])
             if v < 0.3:
                 return [230, 57, 70, 220]  # red
             if v < 0.6:
@@ -102,8 +130,12 @@ try:
                 radius_min_pixels=4,
                 radius_max_pixels=25,
             )
+            if mode == "bike":
+                metric_label = "Bikes"
+            else:
+                metric_label = "Docks"
             tooltip = {
-                "html": "<b>{name}</b><br/>Bikes: {numbikesavailable}<br/>Docks: {numdocksavailable}",
+                "html": "<b>{name}</b><br/>Bikes: {numbikesavailable}<br/>Docks: {numdocksavailable}<br/>Mode: " + metric_label,
                 "style": {"backgroundColor": "#1E1E1E", "color": "white"},
             }
             view_state = pdk.ViewState(latitude=center_lat, longitude=center_lon, zoom=11)
