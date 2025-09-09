@@ -142,5 +142,39 @@ try:
             deck = pdk.Deck(layers=[layer], initial_view_state=view_state, tooltip=tooltip, map_style="light")
             st.pydeck_chart(deck, use_container_width=True)
 
+            # Legend + quick stats
+            avg_bikes = map_df["numbikesavailable"].fillna(0).mean()
+            avg_docks = map_df["numdocksavailable"].fillna(0).mean()
+            total_capacity = map_df["capacity"].fillna(0).sum()
+            if total_capacity > 0:
+                fleet_util = (map_df["numbikesavailable"].fillna(0).sum() / total_capacity) * 100
+            else:
+                fleet_util = 0.0
+
+            col_a, col_b = st.columns([1,2])
+            with col_a:
+                st.markdown("#### Légende")
+                if mode == "bike":
+                    st.markdown("""
+<div style='line-height:1.2'>
+<span style='display:inline-block;width:14px;height:14px;background:#46A03C;border-radius:50%;margin-right:6px;'></span> ≥ 60% vélos<br>
+<span style='display:inline-block;width:14px;height:14px;background:#FDB446;border-radius:50%;margin-right:6px;'></span> 30–59% vélos<br>
+<span style='display:inline-block;width:14px;height:14px;background:#E63946;border-radius:50%;margin-right:6px;'></span> < 30% vélos<br>
+<span style='display:inline-block;width:14px;height:14px;background:#000;border-radius:50%;margin-right:6px;'></span> capacité inconnue
+</div>
+""", unsafe_allow_html=True)
+                else:
+                    st.markdown("""
+<div style='line-height:1.2'>
+<span style='display:inline-block;width:14px;height:14px;background:#46A03C;border-radius:50%;margin-right:6px;'></span> ≥ 60% docks libres<br>
+<span style='display:inline-block;width:14px;height:14px;background:#FDB446;border-radius:50%;margin-right:6px;'></span> 30–59% docks libres<br>
+<span style='display:inline-block;width:14px;height:14px;background:#E63946;border-radius:50%;margin-right:6px;'></span> < 30% docks libres<br>
+<span style='display:inline-block;width:14px;height:14px;background:#000;border-radius:50%;margin-right:6px;'></span> capacité inconnue
+</div>
+""", unsafe_allow_html=True)
+            with col_b:
+                st.markdown("#### Stats rapides")
+                st.markdown(f"Stations: **{len(map_df)}**  | Utilisation flotte: **{fleet_util:.1f}%**  | Moy. vélos/station: **{avg_bikes:.1f}**  | Moy. docks/station: **{avg_docks:.1f}**")
+
 except Exception as e:
     status.error(f"Error loading data: {e}")
