@@ -2,6 +2,7 @@ import argparse
 import json
 import os
 import sys
+import gzip
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -48,10 +49,11 @@ def write_jsonl(
     out_dir: str,
     capture_ts: datetime,
     stale_threshold_sec: Optional[int] = None,
+    gzip_enabled: bool = True,
 ) -> str:
     os.makedirs(out_dir, exist_ok=True)
     ts_label = capture_ts.strftime("%Y%m%d_%H%M%S")
-    filename = f"velib_{ts_label}.jsonl"
+    filename = f"velib_{ts_label}.jsonl" + (".gz" if gzip_enabled else "")
     path = os.path.join(out_dir, filename)
     tmp_path = path + ".tmp"
 
@@ -60,7 +62,10 @@ def write_jsonl(
     max_staleness = -1.0
     stale_count = 0
     try:
-        with open(tmp_path, "w", encoding="utf-8") as f:
+        # Choose file opener (gzip text mode if enabled)
+        opener = gzip.open if gzip_enabled else open
+        mode = "wt" if gzip_enabled else "w"
+        with opener(tmp_path, mode, encoding="utf-8") as f:  # type: ignore
             for rec in records:
                 duedate_raw = rec.get("duedate")
                 duedate_utc, staleness = compute_staleness(capture_ts, duedate_raw)
@@ -102,7 +107,7 @@ def write_jsonl(
             median = (stale_values_sorted[mid - 1] + stale_values_sorted[mid]) / 2
     else:
         median = None
-    print(f"Snapshot written: {path}")
+    print(f"Snapshot written: {path} (gzip={'on' if gzip_enabled else 'off'})")
     print(f"Records: {total}")
     if median is not None:
         print(f"Median staleness (s): {median:.1f}")
@@ -125,6 +130,11 @@ def main():
         default=900,
         help="Threshold in seconds to mark stale_flag (set negative to disable)",
     )
+    parser.add_argument(
+        "--no-gzip",
+        action="store_true",
+        help="Disable gzip compression (enabled by default)",
+    )
     args = parser.parse_args()
 
     capture_ts = datetime.utcnow().replace(tzinfo=timezone.utc)
@@ -140,7 +150,13 @@ def main():
 
     try:
         threshold = args.stale_threshold_sec if args.stale_threshold_sec >= 0 else None
-        write_jsonl(records, args.out_dir, capture_ts, stale_threshold_sec=threshold)
+        write_jsonl(
+            records,
+            args.out_dir,
+            capture_ts,
+            stale_threshold_sec=threshold,
+            gzip_enabled=not args.no_gzip,
+        )
     except Exception as e:
         print(f"Write error: {e}")
         return 2
