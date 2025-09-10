@@ -163,5 +163,44 @@ def main():
     return 0
 
 
+def capture_snapshot(
+    out_dir: str = "data/snapshots",
+    page_size: int = 100,
+    stale_threshold_sec: int = 900,
+    gzip_enabled: bool = True,
+    include_empty: bool = False,
+) -> Dict[str, Any]:
+    """Programmatic API to capture a snapshot (used by loop runner).
+
+    Returns a dict with keys: path, records, capture_ts, stale_threshold_sec.
+    Raises exceptions on fetch or write errors.
+    """
+    capture_ts = datetime.utcnow().replace(tzinfo=timezone.utc)
+    records = fetch_live_all(page_size=page_size)
+    if not records and not include_empty:
+        return {
+            "path": None,
+            "records": 0,
+            "capture_ts": capture_ts,
+            "stale_threshold_sec": stale_threshold_sec,
+            "skipped": True,
+        }
+    threshold = stale_threshold_sec if stale_threshold_sec >= 0 else None
+    path = write_jsonl(
+        records,
+        out_dir,
+        capture_ts,
+        stale_threshold_sec=threshold,
+        gzip_enabled=gzip_enabled,
+    )
+    return {
+        "path": path,
+        "records": len(records),
+        "capture_ts": capture_ts,
+        "stale_threshold_sec": stale_threshold_sec,
+        "skipped": False,
+    }
+
+
 if __name__ == "__main__":
     raise SystemExit(main())
