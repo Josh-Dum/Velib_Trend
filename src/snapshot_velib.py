@@ -43,7 +43,12 @@ def compute_staleness(capture_utc: datetime, duedate_raw: Optional[str]) -> (Opt
     return d_utc, (capture_utc - d_utc).total_seconds()
 
 
-def write_jsonl(records: List[Dict[str, Any]], out_dir: str, capture_ts: datetime) -> str:
+def write_jsonl(
+    records: List[Dict[str, Any]],
+    out_dir: str,
+    capture_ts: datetime,
+    stale_threshold_sec: Optional[int] = None,
+) -> str:
     os.makedirs(out_dir, exist_ok=True)
     ts_label = capture_ts.strftime("%Y%m%d_%H%M%S")
     filename = f"velib_{ts_label}.jsonl"
@@ -53,16 +58,23 @@ def write_jsonl(records: List[Dict[str, Any]], out_dir: str, capture_ts: datetim
     total = 0
     stale_values: List[float] = []
     max_staleness = -1.0
+    stale_count = 0
     try:
         with open(tmp_path, "w", encoding="utf-8") as f:
             for rec in records:
                 duedate_raw = rec.get("duedate")
                 duedate_utc, staleness = compute_staleness(capture_ts, duedate_raw)
+                stale_flag: Optional[bool] = None
+                if staleness is not None and stale_threshold_sec is not None and stale_threshold_sec >= 0:
+                    stale_flag = staleness >= stale_threshold_sec
+                    if stale_flag:
+                        stale_count += 1
                 line_obj = {
                     **rec,  # raw fields
                     "capture_ts_utc": capture_ts.isoformat().replace("+00:00", "Z"),
                     "duedate_utc": duedate_utc.isoformat().replace("+00:00", "Z") if duedate_utc else None,
                     "staleness_sec": round(staleness, 3) if staleness is not None else None,
+                    "stale_flag": stale_flag,
                 }
                 if staleness is not None:
                     stale_values.append(staleness)
@@ -96,6 +108,9 @@ def write_jsonl(records: List[Dict[str, Any]], out_dir: str, capture_ts: datetim
         print(f"Median staleness (s): {median:.1f}")
     if max_staleness >= 0:
         print(f"Max staleness (s): {max_staleness:.1f}")
+    if stale_threshold_sec is not None and stale_threshold_sec >= 0 and total > 0:
+        pct = (stale_count / total) * 100
+        print(f"Stale (>= {stale_threshold_sec}s): {stale_count} ({pct:.1f}%)")
     return path
 
 
@@ -104,6 +119,12 @@ def main():
     parser.add_argument("--out-dir", default="data/snapshots", help="Output directory for JSONL snapshots")
     parser.add_argument("--page-size", type=int, default=100, help="API page size (internal pagination)")
     parser.add_argument("--include-empty", action="store_true", help="Write file even if zero records returned")
+    parser.add_argument(
+        "--stale-threshold-sec",
+        type=int,
+        default=900,
+        help="Threshold in seconds to mark stale_flag (set negative to disable)",
+    )
     args = parser.parse_args()
 
     capture_ts = datetime.utcnow().replace(tzinfo=timezone.utc)
@@ -118,7 +139,8 @@ def main():
         return 0
 
     try:
-        write_jsonl(records, args.out_dir, capture_ts)
+        threshold = args.stale_threshold_sec if args.stale_threshold_sec >= 0 else None
+        write_jsonl(records, args.out_dir, capture_ts, stale_threshold_sec=threshold)
     except Exception as e:
         print(f"Write error: {e}")
         return 2
