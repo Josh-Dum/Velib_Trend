@@ -14,6 +14,7 @@ if __package__ is None or __package__ == "":
         sys.path.insert(0, project_root)
 
 from src.snapshot_velib import capture_snapshot  # type: ignore
+from src.snapshot_index import append_index_for_file  # type: ignore
 
 
 def align_sleep(interval_sec: int) -> float:
@@ -32,6 +33,7 @@ def main():
     parser.add_argument("--stale-threshold-sec", type=int, default=900, help="Stale threshold seconds (negative disables)")
     parser.add_argument("--no-gzip", action="store_true", help="Disable gzip compression")
     parser.add_argument("--include-empty", action="store_true", help="Write file even if zero records")
+    parser.add_argument("--no-index", action="store_true", help="Disable writing a snapshot index (enabled by default)")
     parser.add_argument("--jitter-sec", type=int, default=0, help="Add up to this many random seconds before each run")
     parser.add_argument("--align", action="store_true", help="Align first run to the next interval boundary")
     parser.add_argument("--quiet", action="store_true", help="Reduce per-run output")
@@ -77,6 +79,12 @@ def main():
                         print(
                             f"[loop] Wrote {result['records']} records -> {result['path']}"
                         )
+                    # Append index entry unless disabled
+                    if result.get("path") and not args.no_index:
+                        try:
+                            append_index_for_file(result["path"])
+                        except Exception as e:
+                            print(f"[loop] index append error: {e}")
             except Exception as e:
                 consecutive_failures += 1
                 backoff = min(base_backoff * (2 ** (consecutive_failures - 1)), max_backoff)
