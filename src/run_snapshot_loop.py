@@ -33,6 +33,11 @@ def main():
     parser.add_argument("--stale-threshold-sec", type=int, default=900, help="Stale threshold seconds (negative disables)")
     parser.add_argument("--no-gzip", action="store_true", help="Disable gzip compression")
     parser.add_argument("--include-empty", action="store_true", help="Write file even if zero records")
+    parser.add_argument('--to-s3', action='store_true', help='Upload snapshot to S3')
+    parser.add_argument('--s3-bucket', type=str, default=None, help='S3 bucket name to upload snapshots')
+    parser.add_argument('--s3-prefix', type=str, default='snapshots', help='S3 key prefix')
+    parser.add_argument('--remove-local', action='store_true', help='Remove local snapshot file after successful S3 upload')
+    parser.add_argument('--s3-upload-retries', type=int, default=3, help='S3 upload retry count')
     parser.add_argument("--no-index", action="store_true", help="Disable writing a snapshot index (enabled by default)")
     parser.add_argument("--jitter-sec", type=int, default=0, help="Add up to this many random seconds before each run")
     parser.add_argument("--align", action="store_true", help="Align first run to the next interval boundary")
@@ -69,6 +74,10 @@ def main():
                     stale_threshold_sec=args.stale_threshold_sec,
                     gzip_enabled=not args.no_gzip,
                     include_empty=args.include_empty,
+                    # S3 options forwarded
+                    # These are optional; capture_snapshot currently uploads and returns local path
+                    # We will handle index writing to S3 below if --to-s3 is set
+                    
                 )
                 consecutive_failures = 0
                 if result.get("skipped"):
@@ -82,7 +91,17 @@ def main():
                     # Append index entry unless disabled
                     if result.get("path") and not args.no_index:
                         try:
-                            append_index_for_file(result["path"])
+                            # If uploading to S3 and s3_bucket set, write index to S3 path
+                            if args.to_s3 and args.s3_bucket:
+                                # create s3 index prefix s3://bucket/prefix/index/
+                                prefix = args.s3_prefix.rstrip('/') if args.s3_prefix else ''
+                                if prefix:
+                                    index_s3_uri = f"s3://{args.s3_bucket}/{prefix}/"
+                                else:
+                                    index_s3_uri = f"s3://{args.s3_bucket}/"
+                                append_index_for_file(result["path"], index_path=index_s3_uri)
+                            else:
+                                append_index_for_file(result["path"])
                         except Exception as e:
                             print(f"[loop] index append error: {e}")
             except Exception as e:

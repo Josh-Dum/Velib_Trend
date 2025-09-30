@@ -1,9 +1,12 @@
-import csv
 import gzip
 import json
 import os
 from statistics import median
 from typing import Optional
+import io
+import boto3
+import botocore
+from pathlib import Path
 
 
 def _open_maybe_gzip(path: str):
@@ -61,58 +64,66 @@ def compute_snapshot_stats(path: str):
     }
 
 
-def append_index_for_file(snapshot_path: str, index_path: Optional[str] = None):
-    """Append a summary row for `snapshot_path` to `index.csv`.
+def append_index_for_file(snapshot_path: str, index_path: Optional[str] = None) -> str:
+    """Write a per-snapshot metadata JSON next to the snapshot or to S3.
 
-    If `index_path` is None, use sibling file `index.csv` in the same directory.
+    The metadata file contains the minimal fields required by the project:
+      - snapshot_key: S3 key or local path to the Bronze snapshot
+      - capture_ts: ISO8601 capture timestamp (best-effort)
+      - uploader_version: from env var UPLOADER_VERSION or 'unknown'
+      - rows_bronze: integer record count
+
+    If `index_path` is an S3 URI (s3://bucket/prefix/), the metadata will be
+    uploaded to `s3://bucket/prefix/index/<snapshot_basename>.json`. If no
+    index_path is provided, the metadata is written locally next to the
+    snapshot under `<snapshot_dir>/index/<snapshot_basename>.json`.
+    Returns the path (local or s3 uri) of the written metadata file.
     """
-    if index_path is None:
-        index_path = os.path.join(os.path.dirname(snapshot_path), "index.csv")
-
     stats = compute_snapshot_stats(snapshot_path)
-    file_bytes = os.path.getsize(snapshot_path)
-    gzip_flag = snapshot_path.endswith(".gz")
-    capture_ts = None
-    # try to parse capture_ts from filename pattern velib_YYYYMMDD_HHMMSS
+    rows = stats.get("records", 0)
     basename = os.path.basename(snapshot_path)
+    stem = basename
+    # normalize stem to .json (remove .jsonl(.gz) suffixes)
+    if stem.endswith('.jsonl.gz'):
+        stem = stem[:-8]
+    elif stem.endswith('.jsonl'):
+        stem = stem[:-6]
+
+    # best-effort capture_ts from filename
+    capture_ts = None
     try:
         if basename.startswith("velib_"):
             ts_part = basename.split("velib_")[1].split(".")[0]
-            # format YYYYMMDD_HHMMSS
             if "_" in ts_part:
                 d, t = ts_part.split("_")
                 capture_ts = f"{d[:4]}-{d[4:6]}-{d[6:]}T{t[:2]}:{t[2:4]}:{t[4:]}Z"
     except Exception:
         capture_ts = None
 
-    header = [
-        "file_name",
-        "capture_ts_utc",
-        "records",
-        "median_staleness_s",
-        "max_staleness_s",
-        "pct_stale",
-        "stale_count",
-        "gzip",
-        "file_bytes",
-    ]
+    uploader_version = os.environ.get('UPLOADER_VERSION', 'unknown')
 
-    need_header = not os.path.exists(index_path)
-    os.makedirs(os.path.dirname(index_path), exist_ok=True)
-    with open(index_path, "a", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        if need_header:
-            writer.writerow(header)
-        writer.writerow([
-            basename,
-            capture_ts or "",
-            stats["records"],
-            f"{stats['median_staleness_s']:.3f}" if stats["median_staleness_s"] is not None else "",
-            f"{stats['max_staleness_s']:.3f}" if stats["max_staleness_s"] is not None else "",
-            f"{stats['pct_stale']:.2f}" if stats["pct_stale"] is not None else "",
-            stats["stale_count"],
-            str(gzip_flag),
-            file_bytes,
-        ])
+    metadata = {
+        "snapshot_key": snapshot_path,
+        "capture_ts": capture_ts or "",
+        "uploader_version": uploader_version,
+        "rows_bronze": rows,
+    }
 
-    return index_path
+    if index_path and index_path.startswith('s3://'):
+        # parse s3://bucket/prefix
+        parts = index_path[5:].split('/', 1)
+        s3_bucket = parts[0]
+        s3_prefix = parts[1] if len(parts) > 1 else ''
+        key_prefix = s3_prefix.rstrip('/') + '/index' if s3_prefix else 'index'
+        key = f"{key_prefix}/{stem}.json"
+        s3 = boto3.client('s3')
+        s3.put_object(Bucket=s3_bucket, Key=key, Body=json.dumps(metadata).encode('utf-8'))
+        return f's3://{s3_bucket}/{key}'
+
+    # local write: snapshots dir / index / stem.json
+    out_dir = Path(snapshot_path).parent / 'index'
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / f"{stem}.json"
+    with open(out_path, 'w', encoding='utf-8') as f:
+        json.dump(metadata, f, ensure_ascii=False, indent=2)
+    return str(out_path)

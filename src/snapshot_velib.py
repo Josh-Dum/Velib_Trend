@@ -3,8 +3,14 @@ import json
 import os
 import sys
 import gzip
+import io
+import time
+import random
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
+
+import boto3
+import botocore
 
 # Allow running both:
 #   python -m src.snapshot_velib
@@ -119,6 +125,59 @@ def write_jsonl(
     return path
 
 
+def _upload_to_s3(local_path: str, bucket: str, prefix: str = 'snapshots', region: Optional[str] = None, retries: int = 3, metadata: Optional[dict] = None) -> str:
+    """Upload local file to S3 and return s3://... key. Retries on transient errors."""
+    # Basic validation
+    if not os.path.exists(local_path):
+        raise FileNotFoundError(local_path)
+
+    key = f"{prefix.rstrip('/')}/{os.path.basename(local_path)}"
+    s3 = boto3.client('s3', region_name=region) if region else boto3.client('s3')
+
+    # Ensure metadata values are strings and keys lowercase (S3 returns metadata as lower-case)
+    extra_args = {}
+    if metadata:
+        extra_args['Metadata'] = {str(k).lower(): str(v) for k, v in metadata.items()}
+
+    attempt = 0
+    base = 1
+    max_backoff = 30
+    while True:
+        attempt += 1
+        try:
+            # upload_file handles multipart and streaming
+            s3.upload_file(local_path, bucket, key, ExtraArgs=extra_args)
+            return f"s3://{bucket}/{key}"
+        except botocore.exceptions.NoCredentialsError:
+            # Permanent configuration error — don't retry
+            raise
+        except botocore.exceptions.PartialCredentialsError:
+            raise
+        except botocore.exceptions.ClientError as e:
+            # Inspect common permanent failure codes and fail-fast for them
+            code = None
+            try:
+                code = e.response.get('Error', {}).get('Code')
+            except Exception:
+                code = None
+            if code in ('AccessDenied', 'InvalidBucketName', 'InvalidAccessKeyId', 'PermanentRedirect'):
+                raise
+            last_exc = e
+        except botocore.exceptions.BotoCoreError as e:
+            # network/transport related errors — treat as retryable
+            last_exc = e
+
+        # If we've exhausted retries, re-raise last exception
+        if attempt >= retries:
+            raise last_exc
+
+        # Exponential backoff with jitter
+        sleep = min(max_backoff, base * (2 ** (attempt - 1))) + random.uniform(0, 1)
+        print(f"[s3-upload] attempt {attempt}/{retries} failed: {last_exc} -> sleeping {sleep:.1f}s")
+        time.sleep(sleep)
+
+
+
 def main():
     parser = argparse.ArgumentParser(description="Capture a full Velib availability snapshot (JSONL)")
     parser.add_argument("--out-dir", default="data/snapshots", help="Output directory for JSONL snapshots")
@@ -135,6 +194,11 @@ def main():
         action="store_true",
         help="Disable gzip compression (enabled by default)",
     )
+    parser.add_argument('--to-s3', action='store_true', help='Upload snapshot to S3')
+    parser.add_argument('--s3-bucket', type=str, default=None, help='S3 bucket name to upload snapshots')
+    parser.add_argument('--s3-prefix', type=str, default='snapshots', help='S3 key prefix')
+    parser.add_argument('--remove-local', action='store_true', help='Remove local snapshot file after successful S3 upload')
+    parser.add_argument('--s3-upload-retries', type=int, default=3, help='S3 upload retry count')
     args = parser.parse_args()
 
     capture_ts = datetime.utcnow().replace(tzinfo=timezone.utc)
@@ -150,13 +214,35 @@ def main():
 
     try:
         threshold = args.stale_threshold_sec if args.stale_threshold_sec >= 0 else None
-        write_jsonl(
+        path = write_jsonl(
             records,
             args.out_dir,
             capture_ts,
             stale_threshold_sec=threshold,
             gzip_enabled=not args.no_gzip,
         )
+        # Optionally upload to S3
+        if args.to_s3:
+            if not args.s3_bucket:
+                print('Missing --s3-bucket for S3 upload')
+                return 3
+            meta = {
+                'original_filename': os.path.basename(path),
+                'gzip': str(not args.no_gzip),
+                'capture_ts_utc': capture_ts.isoformat().replace('+00:00', 'Z'),
+            }
+            try:
+                s3uri = _upload_to_s3(path, args.s3_bucket, prefix=args.s3_prefix, retries=args.s3_upload_retries, metadata=meta)
+                print(f'Uploaded to {s3uri}')
+                if args.remove_local:
+                    try:
+                        os.remove(path)
+                        print('Removed local snapshot after upload')
+                    except Exception as e:
+                        print('Failed to remove local snapshot:', e)
+            except Exception as e:
+                print('S3 upload failed:', e)
+                return 4
     except Exception as e:
         print(f"Write error: {e}")
         return 2
@@ -193,6 +279,13 @@ def capture_snapshot(
         stale_threshold_sec=threshold,
         gzip_enabled=gzip_enabled,
     )
+    return {
+        "path": path,
+        "records": len(records),
+        "capture_ts": capture_ts,
+        "stale_threshold_sec": stale_threshold_sec,
+        "skipped": False,
+    }
     return {
         "path": path,
         "records": len(records),

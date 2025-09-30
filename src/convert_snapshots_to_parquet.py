@@ -34,11 +34,26 @@ import pandas as pd
 
 def list_snapshot_files(snapshots_dir: Path, use_index: bool) -> List[Path]:
     if use_index:
-        index_path = snapshots_dir / "index.csv"
-        if not index_path.exists():
-            raise FileNotFoundError(f"Index not found at {index_path}")
-        df = pd.read_csv(index_path)
-        files = [snapshots_dir / f for f in df['file_name'].tolist() if (snapshots_dir / f).exists()]
+        # Look for per-snapshot JSON metadata under snapshots_dir/index/*.json
+        index_dir = snapshots_dir / "index"
+        if not index_dir.exists():
+            raise FileNotFoundError(f"Index directory not found at {index_dir}")
+        files: List[Path] = []
+        for meta in sorted(index_dir.glob('*.json')):
+            try:
+                payload = pd.read_json(meta)
+            except Exception:
+                # fallback to manual JSON read
+                import json as _json
+                with open(meta, 'r', encoding='utf-8') as fh:
+                    payload = _json.load(fh)
+            # metadata should contain 'snapshot_key' which can be a path relative to snapshots_dir
+            snap_key = payload.get('snapshot_key') if isinstance(payload, dict) else None
+            if not snap_key:
+                continue
+            p = Path(snapshots_dir) / snap_key if not Path(snap_key).is_absolute() and not str(snap_key).startswith('s3://') else Path(snap_key)
+            if p.exists():
+                files.append(p)
         return files
 
     patterns = ["*.jsonl", "*.jsonl.gz"]

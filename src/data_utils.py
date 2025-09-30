@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import csv
 import os
+import json
+from typing import Any, Dict, Iterable, List, Tuple
 from typing import Any, Dict, Iterable, List, Tuple
 
 
@@ -72,18 +73,9 @@ def validate_and_sanitize(rows: Iterable[Dict[str, Any]]) -> Tuple[List[Dict[str
     return all_rows, all_issues
 
 
-def save_csv(records: List[Dict[str, Any]], out_path: str) -> None:
+    # CSV output removed from the project per design: use JSON snapshots and per-snapshot
+    # metadata JSON files. If you need CSV exports for ad-hoc tasks, generate them from
+    # converted Parquet locally using pandas.
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
-    # Determine headers: union of keys in order of first record, then others
-    headers: List[str] = []
-    seen = set()
-    for rec in records:
-        for k in rec.keys():
-            if k not in seen:
-                seen.add(k)
-                headers.append(k)
-
-    with open(out_path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=headers)
-        writer.writeheader()
-        writer.writerows(records)
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(records, f, ensure_ascii=False, indent=4)

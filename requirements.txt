@@ -8,3 +8,4 @@ uvicorn[standard]>=0.30.0
 streamlit>=1.36.0
 pandas>=2.2.2
 pydeck>=0.8.0
+boto3>=1.26.0

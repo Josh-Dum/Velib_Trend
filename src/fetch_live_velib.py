@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Any, Dict, List
 
 import requests
-from src.data_utils import validate_and_sanitize, save_csv
+from src.data_utils import validate_and_sanitize
 
 API_URL = "https://opendata.paris.fr/api/explore/v2.1/catalog/datasets/velib-disponibilite-en-temps-reel/records"
 
@@ -127,7 +127,6 @@ if __name__ == "__main__":
     parser.add_argument("--limit", type=int, default=5, help="number of records to fetch")
     parser.add_argument("--out", type=str, default="data/sample.json", help="output JSON path")
     parser.add_argument("--validate", action="store_true", help="validate and coerce numeric/float fields")
-    parser.add_argument("--csv", type=str, default=None, help="optional CSV output path (e.g., data/sample.csv)")
     args = parser.parse_args()
 
     try:
@@ -143,9 +142,6 @@ if __name__ == "__main__":
                     print(f" ... {len(issues) - 10} more")
         save_json(norm, args.out)
         print(f"Saved {len(norm)} records to {args.out}")
-        if args.csv:
-            save_csv(norm, args.csv)
-            print(f"Saved CSV to {args.csv}")
     except requests.HTTPError as e:
         print(f"HTTP error: {e}")
     except Exception as e:
