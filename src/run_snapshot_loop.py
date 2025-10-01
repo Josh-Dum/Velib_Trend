@@ -88,6 +88,31 @@ def main():
                         print(
                             f"[loop] Wrote {result['records']} records -> {result['path']}"
                         )
+                    
+                    # Upload snapshot to S3 if requested
+                    if args.to_s3 and args.s3_bucket and result.get("path"):
+                        try:
+                            import boto3
+                            from pathlib import Path
+                            
+                            # Upload the snapshot file
+                            s3 = boto3.client('s3')
+                            local_path = result["path"]
+                            filename = Path(local_path).name
+                            prefix = args.s3_prefix.rstrip('/') if args.s3_prefix else ''
+                            s3_key = f"{prefix}/snapshots/{filename}" if prefix else f"snapshots/{filename}"
+                            
+                            s3.upload_file(local_path, args.s3_bucket, s3_key)
+                            if not args.quiet:
+                                print(f"[loop] Uploaded snapshot -> s3://{args.s3_bucket}/{s3_key}")
+                                
+                            # Remove local file if requested
+                            if args.remove_local:
+                                os.unlink(local_path)
+                                if not args.quiet:
+                                    print(f"[loop] Removed local file {local_path}")
+                        except Exception as e:
+                            print(f"[loop] S3 upload error: {e}")
                     # Append index entry unless disabled
                     if result.get("path") and not args.no_index:
                         try:

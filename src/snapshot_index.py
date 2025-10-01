@@ -85,9 +85,9 @@ def append_index_for_file(snapshot_path: str, index_path: Optional[str] = None) 
     stem = basename
     # normalize stem to .json (remove .jsonl(.gz) suffixes)
     if stem.endswith('.jsonl.gz'):
-        stem = stem[:-8]
+        stem = stem[:-9]  # Remove .jsonl.gz
     elif stem.endswith('.jsonl'):
-        stem = stem[:-6]
+        stem = stem[:-6]  # Remove .jsonl
 
     # best-effort capture_ts from filename
     capture_ts = None
