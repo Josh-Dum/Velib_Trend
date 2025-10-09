@@ -91,3 +91,5 @@ README.md
 AGENTS.md
 MEMORY.md
 DRAFT.md
+notebooks/*.ipynb
+clean_commit.instructions.md
