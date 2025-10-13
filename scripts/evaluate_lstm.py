@@ -20,6 +20,7 @@ import torch.nn as nn
 import numpy as np
 import pickle
 import json
+import logging
 from pathlib import Path
 from datetime import datetime
 import matplotlib.pyplot as plt
@@ -46,6 +47,39 @@ sns.set_style("whitegrid")
 plt.rcParams['figure.figsize'] = (12, 6)
 
 
+# ============================================================================
+# LOGGING CONFIGURATION
+# ============================================================================
+
+def setup_logging():
+    """
+    Configure logging to write to both console and file.
+    
+    Log file: data/results/evaluation.log
+    Format: timestamp - level - message
+    """
+    # Create log directory if it doesn't exist
+    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    log_file = RESULTS_DIR / "evaluation.log"
+    
+    # Configure logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S',
+        handlers=[
+            logging.FileHandler(log_file, mode='a'),  # Append to file
+            logging.StreamHandler()  # Also print to console
+        ]
+    )
+    
+    return logging.getLogger(__name__)
+
+
+# ============================================================================
+# MODEL LOADING
+# ============================================================================
+
 def load_model_and_config() -> Tuple[nn.Module, Dict]:
     """
     Load the trained model and its configuration.
@@ -54,7 +88,8 @@ def load_model_and_config() -> Tuple[nn.Module, Dict]:
         model: Loaded PyTorch model
         config: Configuration dictionary
     """
-    print("📂 Loading trained model...")
+    logger = logging.getLogger(__name__)
+    logger.info("📂 Loading trained model...")
     
     # Load config
     config_path = MODEL_DIR / "config.json"
@@ -78,21 +113,22 @@ def load_model_and_config() -> Tuple[nn.Module, Dict]:
     model = model.to(DEVICE)
     model.eval()  # Set to evaluation mode
     
-    print(f"✅ Model loaded from epoch {checkpoint['epoch']}")
-    print(f"   Best validation loss: {checkpoint['val_loss']:.6f}")
-    print(f"   Device: {DEVICE}")
-    print()
+    logger.info(f"✅ Model loaded from epoch {checkpoint['epoch']}")
+    logger.info(f"   Best validation loss: {checkpoint['val_loss']:.6f}")
+    logger.info(f"   Device: {DEVICE}")
+    logger.info("")
     
     return model, config
 
 
 def load_scaler():
     """Load the StandardScaler for denormalizing predictions."""
-    print("📂 Loading scaler...")
+    logger = logging.getLogger(__name__)
+    logger.info("📂 Loading scaler...")
     with open(SILVER_DIR / "scaler.pkl", 'rb') as f:
         scaler = pickle.load(f)
-    print(f"✅ Scaler loaded (mean={scaler.mean_[0]:.2f}, std={scaler.scale_[0]:.2f})")
-    print()
+    logger.info(f"✅ Scaler loaded (mean={scaler.mean_[0]:.2f}, std={scaler.scale_[0]:.2f})")
+    logger.info("")
     return scaler
 
 
@@ -115,7 +151,8 @@ def make_predictions(
         predictions: (N, 3) array of denormalized predictions (real bike counts)
         targets: (N, 3) array of denormalized actual values (real bike counts)
     """
-    print("🔮 Making predictions on test set...")
+    logger = logging.getLogger(__name__)
+    logger.info("🔮 Making predictions on test set...")
     
     predictions_list = []
     targets_list = []
@@ -141,19 +178,19 @@ def make_predictions(
     predictions = np.concatenate(predictions_list, axis=0)
     targets = np.concatenate(targets_list, axis=0)
     
-    print(f"✅ Predictions complete: {len(predictions):,} sequences")
-    print(f"   Shape: {predictions.shape}")
-    print(f"   ⚠️  Currently in NORMALIZED scale")
+    logger.info(f"✅ Predictions complete: {len(predictions):,} sequences")
+    logger.info(f"   Shape: {predictions.shape}")
+    logger.info(f"   ⚠️  Currently in NORMALIZED scale")
     
     # Denormalize predictions and targets
-    print(f"🔄 Denormalizing predictions and targets to real bike counts...")
+    logger.info(f"🔄 Denormalizing predictions and targets to real bike counts...")
     predictions_denorm = scaler.inverse_transform(predictions)
     targets_denorm = scaler.inverse_transform(targets)
     
-    print(f"✅ Denormalization complete")
-    print(f"   Predictions range: [{predictions_denorm.min():.2f}, {predictions_denorm.max():.2f}] bikes")
-    print(f"   Targets range: [{targets_denorm.min():.2f}, {targets_denorm.max():.2f}] bikes")
-    print()
+    logger.info(f"✅ Denormalization complete")
+    logger.info(f"   Predictions range: [{predictions_denorm.min():.2f}, {predictions_denorm.max():.2f}] bikes")
+    logger.info(f"   Targets range: [{targets_denorm.min():.2f}, {targets_denorm.max():.2f}] bikes")
+    logger.info("")
     
     return predictions_denorm, targets_denorm
 
@@ -174,7 +211,8 @@ def calculate_metrics(
     Returns:
         metrics: Dictionary with metrics for each horizon
     """
-    print("📊 Calculating metrics for each horizon...")
+    logger = logging.getLogger(__name__)
+    logger.info("📊 Calculating metrics for each horizon...")
     
     metrics = {}
     
@@ -198,13 +236,13 @@ def calculate_metrics(
             'std_error': std_error
         }
         
-        print(f"  {horizon}:")
-        print(f"    MAE:  {mae:.3f} bikes")
-        print(f"    RMSE: {rmse:.3f} bikes")
-        print(f"    R²:   {r2:.4f}")
-        print(f"    Bias: {mean_error:+.3f} bikes (negative = underpredict)")
-        print(f"    Std:  {std_error:.3f} bikes")
-        print()
+        logger.info(f"  {horizon}:")
+        logger.info(f"    MAE:  {mae:.3f} bikes")
+        logger.info(f"    RMSE: {rmse:.3f} bikes")
+        logger.info(f"    R²:   {r2:.4f}")
+        logger.info(f"    Bias: {mean_error:+.3f} bikes (negative = underpredict)")
+        logger.info(f"    Std:  {std_error:.3f} bikes")
+        logger.info("")
     
     return metrics
 
@@ -224,7 +262,8 @@ def plot_predictions_vs_actual(
         save_path: Path to save the figure
         sample_size: Number of points to plot (for clarity)
     """
-    print(f"📊 Plotting predictions vs actual (sampling {sample_size} points)...")
+    logger = logging.getLogger(__name__)
+    logger.info(f"📊 Plotting predictions vs actual (sampling {sample_size} points)...")
     
     # Sample for visualization
     indices = np.random.choice(len(predictions), min(sample_size, len(predictions)), replace=False)
@@ -251,7 +290,7 @@ def plot_predictions_vs_actual(
     
     plt.tight_layout()
     plt.savefig(save_path, dpi=150, bbox_inches='tight')
-    print(f"✅ Saved to {save_path}")
+    logger.info(f"✅ Saved to {save_path}")
     plt.close()
 
 
@@ -268,7 +307,8 @@ def plot_error_distribution(
         targets: (N, 3) actual values
         save_path: Path to save the figure
     """
-    print("📊 Plotting error distributions...")
+    logger = logging.getLogger(__name__)
+    logger.info("📊 Plotting error distributions...")
     
     errors = predictions - targets
     
@@ -295,7 +335,7 @@ def plot_error_distribution(
     
     plt.tight_layout()
     plt.savefig(save_path, dpi=150, bbox_inches='tight')
-    print(f"✅ Saved to {save_path}")
+    logger.info(f"✅ Saved to {save_path}")
     plt.close()
 
 
@@ -307,7 +347,8 @@ def plot_metrics_comparison(metrics: Dict, save_path: Path):
         metrics: Dictionary of metrics
         save_path: Path to save the figure
     """
-    print("📊 Plotting metrics comparison...")
+    logger = logging.getLogger(__name__)
+    logger.info("📊 Plotting metrics comparison...")
     
     horizons = list(metrics.keys())
     mae_values = [metrics[h]['mae'] for h in horizons]
@@ -343,7 +384,7 @@ def plot_metrics_comparison(metrics: Dict, save_path: Path):
     
     plt.tight_layout()
     plt.savefig(save_path, dpi=150, bbox_inches='tight')
-    print(f"✅ Saved to {save_path}")
+    logger.info(f"✅ Saved to {save_path}")
     plt.close()
 
 
@@ -364,7 +405,8 @@ def plot_sample_predictions(
         save_path: Path to save the figure
         n_samples: Number of samples to plot
     """
-    print(f"📊 Plotting {n_samples} sample predictions...")
+    logger = logging.getLogger(__name__)
+    logger.info(f"📊 Plotting {n_samples} sample predictions...")
     
     # Select random samples
     indices = np.random.choice(len(predictions), n_samples, replace=False)
@@ -402,7 +444,7 @@ def plot_sample_predictions(
     
     plt.tight_layout()
     plt.savefig(save_path, dpi=150, bbox_inches='tight')
-    print(f"✅ Saved to {save_path}")
+    logger.info(f"✅ Saved to {save_path}")
     plt.close()
 
 
@@ -416,7 +458,8 @@ def save_metrics_report(metrics: Dict, predictions: np.ndarray, targets: np.ndar
         targets: (N, 3) actual values
         save_path: Path to save the report
     """
-    print("💾 Saving metrics report...")
+    logger = logging.getLogger(__name__)
+    logger.info("💾 Saving metrics report...")
     
     with open(save_path, 'w') as f:
         f.write("=" * 80 + "\n")
@@ -456,16 +499,19 @@ def save_metrics_report(metrics: Dict, predictions: np.ndarray, targets: np.ndar
         
         f.write("\n" + "=" * 80 + "\n")
     
-    print(f"✅ Saved to {save_path}")
+    logger.info(f"✅ Saved to {save_path}")
 
 
 def main():
     """Main evaluation function."""
-    print("\n" + "="*80)
-    print("🔍 LSTM MODEL EVALUATION")
-    print("="*80)
-    print(f"Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print()
+    # Setup logging first
+    logger = setup_logging()
+    
+    logger.info("\n" + "="*80)
+    logger.info("🔍 LSTM MODEL EVALUATION")
+    logger.info("="*80)
+    logger.info(f"Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    logger.info("")
     
     # Create results directory
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -477,9 +523,9 @@ def main():
     scaler = load_scaler()
     
     # Load test dataset
-    print("📂 Loading test dataset...")
+    logger.info("📂 Loading test dataset...")
     test_dataset = VelibSequenceDataset(SILVER_DIR / "sequences_test.npz")
-    print()
+    logger.info("")
     
     # Make predictions (will denormalize internally)
     predictions, targets = make_predictions(model, test_dataset, scaler)
@@ -488,7 +534,7 @@ def main():
     metrics = calculate_metrics(predictions, targets)
     
     # Generate visualizations
-    print("📊 Generating visualizations...")
+    logger.info("📊 Generating visualizations...")
     plot_predictions_vs_actual(
         predictions, targets, 
         RESULTS_DIR / "predictions_vs_actual.png"
@@ -505,7 +551,7 @@ def main():
         predictions, targets, test_dataset,
         RESULTS_DIR / "sample_predictions.png"
     )
-    print()
+    logger.info("")
     
     # Save metrics report
     save_metrics_report(
@@ -514,21 +560,21 @@ def main():
     )
     
     # Final summary
-    print("\n" + "="*80)
-    print("✅ EVALUATION COMPLETE!")
-    print("="*80)
-    print(f"\n📊 Quick Summary:")
-    print(f"  T+1h: MAE={metrics['T+1h']['mae']:.2f} bikes, R²={metrics['T+1h']['r2']:.3f}")
-    print(f"  T+2h: MAE={metrics['T+2h']['mae']:.2f} bikes, R²={metrics['T+2h']['r2']:.3f}")
-    print(f"  T+3h: MAE={metrics['T+3h']['mae']:.2f} bikes, R²={metrics['T+3h']['r2']:.3f}")
-    print(f"\n📁 Results saved to: {RESULTS_DIR}")
-    print(f"  - predictions_vs_actual.png")
-    print(f"  - error_distribution.png")
-    print(f"  - metrics_comparison.png")
-    print(f"  - sample_predictions.png")
-    print(f"  - evaluation_report.txt")
-    print("\n" + "="*80)
-    print(f"Completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    logger.info("\n" + "="*80)
+    logger.info("✅ EVALUATION COMPLETE!")
+    logger.info("="*80)
+    logger.info(f"\n📊 Quick Summary:")
+    logger.info(f"  T+1h: MAE={metrics['T+1h']['mae']:.2f} bikes, R²={metrics['T+1h']['r2']:.3f}")
+    logger.info(f"  T+2h: MAE={metrics['T+2h']['mae']:.2f} bikes, R²={metrics['T+2h']['r2']:.3f}")
+    logger.info(f"  T+3h: MAE={metrics['T+3h']['mae']:.2f} bikes, R²={metrics['T+3h']['r2']:.3f}")
+    logger.info(f"\n📁 Results saved to: {RESULTS_DIR}")
+    logger.info(f"  - predictions_vs_actual.png")
+    logger.info(f"  - error_distribution.png")
+    logger.info(f"  - metrics_comparison.png")
+    logger.info(f"  - sample_predictions.png")
+    logger.info(f"  - evaluation_report.txt")
+    logger.info("\n" + "="*80)
+    logger.info(f"Completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
 
 if __name__ == "__main__":

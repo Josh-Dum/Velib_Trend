@@ -25,6 +25,7 @@ from datetime import datetime
 import json
 from typing import Dict, Tuple
 import matplotlib.pyplot as plt
+import logging
 
 
 # ============================================================================
@@ -60,6 +61,35 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 # ============================================================================
+# LOGGING CONFIGURATION
+# ============================================================================
+
+def setup_logging():
+    """
+    Configure logging to write to both console and file.
+    
+    Log file: data/models/lstm/training.log
+    Format: timestamp - level - message
+    """
+    # Create log directory if it doesn't exist
+    MODEL_DIR.mkdir(parents=True, exist_ok=True)
+    log_file = MODEL_DIR / "training.log"
+    
+    # Configure logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S',
+        handlers=[
+            logging.FileHandler(log_file, mode='a'),  # Append to file
+            logging.StreamHandler()  # Also print to console
+        ]
+    )
+    
+    return logging.getLogger(__name__)
+
+
+# ============================================================================
 # DATASET CLASS
 # ============================================================================
 
@@ -78,7 +108,8 @@ class VelibSequenceDataset(Dataset):
         Args:
             sequences_path: Path to sequences_*.npz file
         """
-        print(f"📂 Loading dataset from {sequences_path.name}...")
+        logger = logging.getLogger(__name__)
+        logger.info(f"📂 Loading dataset from {sequences_path.name}...")
         
         # Load numpy arrays (allow_pickle=True for backward compatibility)
         data = np.load(sequences_path, allow_pickle=True)
@@ -88,10 +119,10 @@ class VelibSequenceDataset(Dataset):
         self.X_static = torch.FloatTensor(data['X_static'].astype(np.float32)) # (N, 7)
         self.y = torch.FloatTensor(data['y'].astype(np.float32))              # (N, 3)
         
-        print(f"✅ Loaded {len(self)} sequences")
-        print(f"   X_seq shape: {self.X_seq.shape}")
-        print(f"   X_static shape: {self.X_static.shape}")
-        print(f"   y shape: {self.y.shape}")
+        logger.info(f"✅ Loaded {len(self)} sequences")
+        logger.info(f"   X_seq shape: {self.X_seq.shape}")
+        logger.info(f"   X_static shape: {self.X_static.shape}")
+        logger.info(f"   y shape: {self.y.shape}")
     
     def __len__(self) -> int:
         """Return the number of sequences."""
@@ -229,6 +260,7 @@ def train_one_epoch(
     Returns:
         Average loss for the epoch
     """
+    logger = logging.getLogger(__name__)
     model.train()  # Set model to training mode
     total_loss = 0.0
     
@@ -258,7 +290,7 @@ def train_one_epoch(
         
         # Print progress every 100 batches
         if (batch_idx + 1) % 100 == 0:
-            print(f"   Batch {batch_idx + 1}/{len(dataloader)}, Loss: {loss.item():.4f}")
+            logger.info(f"   Batch {batch_idx + 1}/{len(dataloader)}, Loss: {loss.item():.4f}")
     
     return total_loss / len(dataloader)
 
@@ -310,6 +342,7 @@ def plot_training_history(train_losses: list, val_losses: list, save_path: Path)
         val_losses: List of validation losses per epoch
         save_path: Path to save the plot
     """
+    logger = logging.getLogger(__name__)
     plt.figure(figsize=(10, 6))
     plt.plot(train_losses, label='Training Loss', linewidth=2)
     plt.plot(val_losses, label='Validation Loss', linewidth=2)
@@ -320,7 +353,7 @@ def plot_training_history(train_losses: list, val_losses: list, save_path: Path)
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
     plt.savefig(save_path, dpi=150)
-    print(f"📊 Training plot saved to {save_path}")
+    logger.info(f"📊 Training plot saved to {save_path}")
 
 
 # ============================================================================
@@ -329,15 +362,18 @@ def plot_training_history(train_losses: list, val_losses: list, save_path: Path)
 
 def main():
     """Main training function."""
-    print("\n" + "="*80)
-    print("🚀 LSTM TRAINING PIPELINE")
-    print("="*80)
-    print(f"Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"Device: {DEVICE}")
+    # Setup logging first
+    logger = setup_logging()
+    
+    logger.info("\n" + "="*80)
+    logger.info("🚀 LSTM TRAINING PIPELINE")
+    logger.info("="*80)
+    logger.info(f"Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    logger.info(f"Device: {DEVICE}")
     if DEVICE.type == "cuda":
-        print(f"GPU: {torch.cuda.get_device_name(0)}")
-        print(f"GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.2f} GB")
-    print()
+        logger.info(f"GPU: {torch.cuda.get_device_name(0)}")
+        logger.info(f"GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.2f} GB")
+    logger.info("")
     
     # Create output directory
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
@@ -345,11 +381,11 @@ def main():
     # ========================================================================
     # 1. LOAD DATASETS
     # ========================================================================
-    print("📂 STEP 1: Loading datasets...")
+    logger.info("📂 STEP 1: Loading datasets...")
     train_dataset = VelibSequenceDataset(SILVER_DIR / "sequences_train.npz")
     val_dataset = VelibSequenceDataset(SILVER_DIR / "sequences_val.npz")
     test_dataset = VelibSequenceDataset(SILVER_DIR / "sequences_test.npz")
-    print()
+    logger.info("")
     
     # Create data loaders
     train_loader = DataLoader(
@@ -373,16 +409,16 @@ def main():
         num_workers=0
     )
     
-    print(f"✅ Data loaders created:")
-    print(f"   Train batches: {len(train_loader)}")
-    print(f"   Val batches: {len(val_loader)}")
-    print(f"   Test batches: {len(test_loader)}")
-    print()
+    logger.info(f"✅ Data loaders created:")
+    logger.info(f"   Train batches: {len(train_loader)}")
+    logger.info(f"   Val batches: {len(val_loader)}")
+    logger.info(f"   Test batches: {len(test_loader)}")
+    logger.info("")
     
     # ========================================================================
     # 2. INITIALIZE MODEL
     # ========================================================================
-    print("🧠 STEP 2: Initializing model...")
+    logger.info("🧠 STEP 2: Initializing model...")
     model = MultiInputLSTM(
         lstm_hidden_1=LSTM_HIDDEN_1,
         lstm_hidden_2=LSTM_HIDDEN_2,
@@ -397,16 +433,16 @@ def main():
     total_params = sum(p.numel() for p in model.parameters())
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     
-    print(f"✅ Model initialized:")
-    print(f"   Total parameters: {total_params:,}")
-    print(f"   Trainable parameters: {trainable_params:,}")
-    print(f"   Model size: ~{total_params * 4 / 1e6:.2f} MB")
-    print()
+    logger.info(f"✅ Model initialized:")
+    logger.info(f"   Total parameters: {total_params:,}")
+    logger.info(f"   Trainable parameters: {trainable_params:,}")
+    logger.info(f"   Model size: ~{total_params * 4 / 1e6:.2f} MB")
+    logger.info("")
     
     # ========================================================================
     # 3. SETUP TRAINING
     # ========================================================================
-    print("⚙️  STEP 3: Setting up training...")
+    logger.info("⚙️  STEP 3: Setting up training...")
     
     # Loss function: Mean Squared Error
     criterion = nn.MSELoss()
@@ -422,20 +458,20 @@ def main():
         patience=5         # Wait 5 epochs before reducing
     )
     
-    print(f"✅ Training setup:")
-    print(f"   Loss function: MSE")
-    print(f"   Optimizer: Adam (lr={LEARNING_RATE})")
-    print(f"   Scheduler: ReduceLROnPlateau")
-    print(f"   Batch size: {BATCH_SIZE}")
-    print(f"   Max epochs: {NUM_EPOCHS}")
-    print(f"   Early stopping patience: {PATIENCE}")
-    print()
+    logger.info(f"✅ Training setup:")
+    logger.info(f"   Loss function: MSE")
+    logger.info(f"   Optimizer: Adam (lr={LEARNING_RATE})")
+    logger.info(f"   Scheduler: ReduceLROnPlateau")
+    logger.info(f"   Batch size: {BATCH_SIZE}")
+    logger.info(f"   Max epochs: {NUM_EPOCHS}")
+    logger.info(f"   Early stopping patience: {PATIENCE}")
+    logger.info("")
     
     # ========================================================================
     # 4. TRAINING LOOP
     # ========================================================================
-    print("🏋️  STEP 4: Training model...")
-    print("="*80)
+    logger.info("🏋️  STEP 4: Training model...")
+    logger.info("="*80)
     
     best_val_loss = float('inf')
     epochs_without_improvement = 0
@@ -443,8 +479,8 @@ def main():
     val_losses = []
     
     for epoch in range(NUM_EPOCHS):
-        print(f"\n📍 Epoch {epoch + 1}/{NUM_EPOCHS}")
-        print("-" * 80)
+        logger.info(f"\n📍 Epoch {epoch + 1}/{NUM_EPOCHS}")
+        logger.info("-" * 80)
         
         # Train for one epoch
         train_loss = train_one_epoch(model, train_loader, criterion, optimizer, DEVICE)
@@ -458,10 +494,10 @@ def main():
         scheduler.step(val_loss)
         
         # Print epoch summary
-        print(f"\n📊 Epoch {epoch + 1} Summary:")
-        print(f"   Train Loss: {train_loss:.6f}")
-        print(f"   Val Loss:   {val_loss:.6f}")
-        print(f"   LR:         {optimizer.param_groups[0]['lr']:.6f}")
+        logger.info(f"\n📊 Epoch {epoch + 1} Summary:")
+        logger.info(f"   Train Loss: {train_loss:.6f}")
+        logger.info(f"   Val Loss:   {val_loss:.6f}")
+        logger.info(f"   LR:         {optimizer.param_groups[0]['lr']:.6f}")
         
         # Check if this is the best model so far
         if val_loss < best_val_loss:
@@ -477,24 +513,24 @@ def main():
                 'train_loss': train_loss,
                 'val_loss': val_loss,
             }, model_path)
-            print(f"   ✅ New best model saved! (Val Loss: {val_loss:.6f})")
+            logger.info(f"   ✅ New best model saved! (Val Loss: {val_loss:.6f})")
         else:
             epochs_without_improvement += 1
-            print(f"   ⏸️  No improvement for {epochs_without_improvement} epoch(s)")
+            logger.info(f"   ⏸️  No improvement for {epochs_without_improvement} epoch(s)")
         
         # Early stopping
         if epochs_without_improvement >= PATIENCE:
-            print(f"\n⏹️  Early stopping triggered after {epoch + 1} epochs")
+            logger.info(f"\n⏹️  Early stopping triggered after {epoch + 1} epochs")
             break
     
-    print("\n" + "="*80)
-    print("✅ TRAINING COMPLETE!")
-    print("="*80)
+    logger.info("\n" + "="*80)
+    logger.info("✅ TRAINING COMPLETE!")
+    logger.info("="*80)
     
     # ========================================================================
     # 5. SAVE TRAINING ARTIFACTS
     # ========================================================================
-    print("\n💾 STEP 5: Saving training artifacts...")
+    logger.info("\n💾 STEP 5: Saving training artifacts...")
     
     # Plot training history
     plot_path = MODEL_DIR / "training_history.png"
@@ -528,7 +564,7 @@ def main():
     config_path = MODEL_DIR / "config.json"
     with open(config_path, 'w') as f:
         json.dump(config, f, indent=2)
-    print(f"✅ Config saved to {config_path}")
+    logger.info(f"✅ Config saved to {config_path}")
     
     # Save training history
     history_path = MODEL_DIR / "training_history.npz"
@@ -537,26 +573,26 @@ def main():
         train_losses=np.array(train_losses),
         val_losses=np.array(val_losses)
     )
-    print(f"✅ Training history saved to {history_path}")
+    logger.info(f"✅ Training history saved to {history_path}")
     
     # ========================================================================
     # 6. FINAL SUMMARY
     # ========================================================================
-    print("\n" + "="*80)
-    print("📊 TRAINING SUMMARY")
-    print("="*80)
-    print(f"Total epochs: {len(train_losses)}")
-    print(f"Best validation loss: {best_val_loss:.6f}")
-    print(f"Final train loss: {train_losses[-1]:.6f}")
-    print(f"Final validation loss: {val_losses[-1]:.6f}")
-    print(f"\n📁 Model artifacts saved to: {MODEL_DIR}")
-    print(f"   - best_model.pth (model weights)")
-    print(f"   - config.json (architecture & hyperparameters)")
-    print(f"   - training_history.png (loss curves)")
-    print(f"   - training_history.npz (raw loss values)")
-    print("\n🎉 Ready for evaluation and deployment!")
-    print("="*80)
-    print(f"Completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    logger.info("\n" + "="*80)
+    logger.info("📊 TRAINING SUMMARY")
+    logger.info("="*80)
+    logger.info(f"Total epochs: {len(train_losses)}")
+    logger.info(f"Best validation loss: {best_val_loss:.6f}")
+    logger.info(f"Final train loss: {train_losses[-1]:.6f}")
+    logger.info(f"Final validation loss: {val_losses[-1]:.6f}")
+    logger.info(f"\n📁 Model artifacts saved to: {MODEL_DIR}")
+    logger.info(f"   - best_model.pth (model weights)")
+    logger.info(f"   - config.json (architecture & hyperparameters)")
+    logger.info(f"   - training_history.png (loss curves)")
+    logger.info(f"   - training_history.npz (raw loss values)")
+    logger.info("\n🎉 Ready for evaluation and deployment!")
+    logger.info("="*80)
+    logger.info(f"Completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
 
 if __name__ == "__main__":
