@@ -197,8 +197,8 @@ def create_sequences_for_station(
         # Static features at prediction time (timestep i)
         static = static_features[i]
         
-        # Targets: bikes_available at T+1, T+2, T+3 (original scale, not normalized)
-        targets = [bikes_available[i + h] for h in horizons]
+        # Targets: bikes_available at T+1, T+2, T+3 (NORMALIZED for consistent training)
+        targets = [bikes_normalized[i + h] for h in horizons]
         
         X_seq_list.append(seq)
         X_static_list.append(static)
