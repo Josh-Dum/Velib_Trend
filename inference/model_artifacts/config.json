@@ -1,0 +1,31 @@
+{
+  "architecture": {
+    "lstm_hidden_1": 128,
+    "lstm_hidden_2": 64,
+    "dense_hidden": 32,
+    "dropout_rate": 0.2,
+    "static_features_size": 7,
+    "output_size": 3
+  },
+  "training": {
+    "batch_size": 128,
+    "learning_rate": 0.001,
+    "num_epochs": 22,
+    "patience": 10
+  },
+  "results": {
+    "best_val_loss": 0.22475635504080724,
+    "final_train_loss": 0.24045067003363457,
+    "final_val_loss": 0.2260964372671397
+  },
+  "data": {
+    "version": "v475snapshots",
+    "records": 705689,
+    "date_range": "2025-10-01_to_2025-10-21",
+    "train_sequences": 454448,
+    "val_sequences": 62790,
+    "test_sequences": 67275
+  },
+  "device": "cuda",
+  "trained_at": "2025-10-21 14:05:28"
+}
