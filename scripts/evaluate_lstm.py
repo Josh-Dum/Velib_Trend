@@ -74,7 +74,7 @@ def setup_logging():
         format='%(asctime)s - %(levelname)s - %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S',
         handlers=[
-            logging.FileHandler(log_file, mode='a'),  # Append to file
+            logging.FileHandler(log_file, mode='a', encoding='utf-8'),  # UTF-8 encoding for emojis
             logging.StreamHandler()  # Also print to console
         ],
         force=True  # Force reconfiguration even if already configured
@@ -399,16 +399,20 @@ def plot_sample_predictions(
     predictions: np.ndarray,
     targets: np.ndarray,
     dataset: VelibSequenceDataset,
+    scaler,
     save_path: Path,
     n_samples: int = 6
 ):
     """
     Plot sample predictions with time series context.
     
+    All data (historical, actual, predicted) shown in REAL bike counts scale.
+    
     Args:
-        predictions: (N, 3) predictions
-        targets: (N, 3) actual values
+        predictions: (N, 3) predictions (real scale)
+        targets: (N, 3) actual values (real scale)
         dataset: Test dataset (for accessing sequences)
+        scaler: StandardScaler to denormalize historical data
         save_path: Path to save the figure
         n_samples: Number of samples to plot
     """
@@ -424,20 +428,34 @@ def plot_sample_predictions(
     for idx, sample_idx in enumerate(indices):
         ax = axes[idx]
         
-        # Get sequence (historical data)
-        X_seq = dataset.X_seq[sample_idx].numpy()  # (24,)
+        # Get sequence (historical data) - NORMALIZED
+        X_seq_normalized = dataset.X_seq[sample_idx].numpy()  # (24,)
         
-        # Plot historical data
+        # DENORMALIZE historical data to real bike counts
+        X_seq_real = scaler.inverse_transform(X_seq_normalized.reshape(-1, 1)).flatten()
+        
+        # Plot historical data (T-24 to T-0, NOW IN REAL SCALE!)
         timesteps_hist = np.arange(-24, 0)
-        ax.plot(timesteps_hist, X_seq, 'o-', color='gray', alpha=0.7, 
-                label='Historical (normalized)', linewidth=2, markersize=4)
+        ax.plot(timesteps_hist, X_seq_real, 'o-', color='gray', alpha=0.7, 
+                label='Historical', linewidth=2, markersize=4)
         
-        # Plot predictions vs actual
+        # Add T=0 point (last historical value) to create continuity
+        # This is the "now" moment from which we make predictions
+        t0_value = X_seq_real[-1]  # Last value in the sequence (T=0)
+        ax.plot([0], [t0_value], 'o', color='gray', markersize=6, alpha=0.7)
+        
+        # Plot predictions vs actual (T+1, T+2, T+3)
         timesteps_pred = np.array([1, 2, 3])
         ax.plot(timesteps_pred, targets[sample_idx], 'go-', 
                 label='Actual', linewidth=2, markersize=8)
         ax.plot(timesteps_pred, predictions[sample_idx], 'rx-', 
                 label='Predicted', linewidth=2, markersize=8)
+        
+        # Connect T=0 to T+1 with a dashed line to show the transition
+        ax.plot([0, 1], [t0_value, targets[sample_idx][0]], '--', 
+                color='green', alpha=0.3, linewidth=1)
+        ax.plot([0, 1], [t0_value, predictions[sample_idx][0]], '--', 
+                color='red', alpha=0.3, linewidth=1)
         
         # Vertical line at present
         ax.axvline(0, color='black', linestyle='--', alpha=0.5)
@@ -601,7 +619,7 @@ def main():
             RESULTS_DIR / "metrics_comparison.png"
         )
         plot_sample_predictions(
-            predictions, targets, test_dataset,
+            predictions, targets, test_dataset, scaler,
             RESULTS_DIR / "sample_predictions.png"
         )
         logger.info("")

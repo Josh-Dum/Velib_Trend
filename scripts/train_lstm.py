@@ -19,6 +19,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
+import pandas as pd
 import pickle
 from pathlib import Path
 from datetime import datetime
@@ -40,10 +41,11 @@ SILVER_DIR = DATA_DIR / "silver"
 MODEL_DIR = DATA_DIR / "models" / "lstm"
 
 # Training hyperparameters
-BATCH_SIZE = 64          # Number of sequences processed together
+BATCH_SIZE = 128         # Number of sequences processed together (increased from 64 for better GPU utilization)
 LEARNING_RATE = 0.001    # How fast the model learns (Adam optimizer)
 NUM_EPOCHS = 50          # Number of complete passes through training data
 PATIENCE = 10            # Early stopping: stop if no improvement after 10 epochs
+NUM_WORKERS = 4          # Parallel data loading workers (0 = single-threaded, 4 = use 4 CPU cores)
 
 # Model architecture
 LSTM_HIDDEN_1 = 128      # First LSTM layer size
@@ -87,13 +89,54 @@ def setup_logging():
         format='%(asctime)s - %(levelname)s - %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S',
         handlers=[
-            logging.FileHandler(log_file, mode='a'),  # Append to file
+            logging.FileHandler(log_file, mode='a', encoding='utf-8'),  # UTF-8 encoding for emojis
             logging.StreamHandler()  # Also print to console
         ],
         force=True  # Force reconfiguration
     )
     
     return logging.getLogger(__name__)
+
+
+def extract_data_metadata():
+    """
+    Extract metadata from the silver Parquet file.
+    
+    Returns:
+        dict: Metadata including version, records, date range
+    """
+    parquet_path = SILVER_DIR / "velib_training_data.parquet"
+    
+    if not parquet_path.exists():
+        return {
+            'version': 'unknown',
+            'records': 0,
+            'date_range': 'unknown'
+        }
+    
+    # Read Parquet file to get metadata
+    df = pd.read_parquet(parquet_path)
+    
+    # Count records
+    num_records = len(df)
+    
+    # Get date range
+    df['capture_time'] = pd.to_datetime(df['capture_time'])
+    min_date = df['capture_time'].min().strftime('%Y-%m-%d')
+    max_date = df['capture_time'].max().strftime('%Y-%m-%d')
+    date_range = f"{min_date}_to_{max_date}"
+    
+    # Count unique snapshots (approximate by counting unique timestamps)
+    num_snapshots = df['capture_time'].nunique()
+    
+    # Generate version string
+    version = f"v{num_snapshots}snapshots"
+    
+    return {
+        'version': version,
+        'records': num_records,
+        'date_range': date_range
+    }
 
 
 # ============================================================================
@@ -342,7 +385,11 @@ def validate(
 
 def plot_training_history(train_losses: list, val_losses: list, save_path: Path):
     """
-    Plot training and validation loss curves.
+    Plot training and validation loss curves with improved visualization.
+    
+    Creates a dual-plot showing:
+    - Left: Full training history (all epochs)
+    - Right: Zoomed view (skipping initial high-loss epochs)
     
     Args:
         train_losses: List of training losses per epoch
@@ -350,16 +397,69 @@ def plot_training_history(train_losses: list, val_losses: list, save_path: Path)
         save_path: Path to save the plot
     """
     logger = logging.getLogger(__name__)
-    plt.figure(figsize=(10, 6))
-    plt.plot(train_losses, label='Training Loss', linewidth=2)
-    plt.plot(val_losses, label='Validation Loss', linewidth=2)
-    plt.xlabel('Epoch', fontsize=12)
-    plt.ylabel('Loss (MSE)', fontsize=12)
-    plt.title('Training History', fontsize=14, fontweight='bold')
-    plt.legend(fontsize=11)
-    plt.grid(True, alpha=0.3)
+    
+    # Create figure with two subplots side by side
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
+    
+    # LEFT PLOT: Full training history
+    epochs = range(len(train_losses))
+    ax1.plot(epochs, train_losses, label='Training Loss', linewidth=2, color='#1f77b4')
+    ax1.plot(epochs, val_losses, label='Validation Loss', linewidth=2, color='#ff7f0e')
+    ax1.set_xlabel('Epoch', fontsize=12)
+    ax1.set_ylabel('Loss (MSE)', fontsize=12)
+    ax1.set_title('Full Training History', fontsize=14, fontweight='bold')
+    ax1.legend(fontsize=11)
+    ax1.grid(True, alpha=0.3)
+    
+    # RIGHT PLOT: Zoomed view (skip first 2-3 epochs with high loss)
+    # Determine cutoff: skip epochs where train_loss > 2x the median
+    median_loss = np.median(train_losses)
+    cutoff_threshold = min(median_loss * 2, 1.0)  # Don't cut if loss never goes below 1.0
+    
+    # Find first epoch where training stabilizes
+    start_epoch = 0
+    for i, loss in enumerate(train_losses):
+        if loss < cutoff_threshold:
+            start_epoch = i
+            break
+    
+    # If we skip epochs, show zoomed view
+    if start_epoch > 0 and len(train_losses) > start_epoch + 3:
+        zoomed_epochs = range(start_epoch, len(train_losses))
+        zoomed_train = train_losses[start_epoch:]
+        zoomed_val = val_losses[start_epoch:]
+        
+        ax2.plot(zoomed_epochs, zoomed_train, label='Training Loss', linewidth=2, color='#1f77b4')
+        ax2.plot(zoomed_epochs, zoomed_val, label='Validation Loss', linewidth=2, color='#ff7f0e')
+        ax2.set_xlabel('Epoch', fontsize=12)
+        ax2.set_ylabel('Loss (MSE)', fontsize=12)
+        ax2.set_title(f'Zoomed View (Epochs {start_epoch}+)', fontsize=14, fontweight='bold')
+        ax2.legend(fontsize=11)
+        ax2.grid(True, alpha=0.3)
+        
+        # Find best validation epoch and mark it
+        best_val_idx = np.argmin(val_losses)
+        if best_val_idx >= start_epoch:
+            ax2.axvline(x=best_val_idx, color='green', linestyle='--', linewidth=1.5, alpha=0.7, label=f'Best Model (Epoch {best_val_idx})')
+            ax2.legend(fontsize=11)
+    else:
+        # If no high initial loss, just show same data
+        ax2.plot(epochs, train_losses, label='Training Loss', linewidth=2, color='#1f77b4')
+        ax2.plot(epochs, val_losses, label='Validation Loss', linewidth=2, color='#ff7f0e')
+        ax2.set_xlabel('Epoch', fontsize=12)
+        ax2.set_ylabel('Loss (MSE)', fontsize=12)
+        ax2.set_title('Training History (Detailed)', fontsize=14, fontweight='bold')
+        ax2.legend(fontsize=11)
+        ax2.grid(True, alpha=0.3)
+        
+        # Mark best validation epoch
+        best_val_idx = np.argmin(val_losses)
+        ax2.axvline(x=best_val_idx, color='green', linestyle='--', linewidth=1.5, alpha=0.7, label=f'Best Model (Epoch {best_val_idx})')
+        ax2.legend(fontsize=11)
+    
     plt.tight_layout()
-    plt.savefig(save_path, dpi=150)
+    plt.savefig(save_path, dpi=150, bbox_inches='tight')
+    plt.close()
     logger.info(f"📊 Training plot saved to {save_path}")
 
 
@@ -405,36 +505,42 @@ def main():
         test_dataset = VelibSequenceDataset(SILVER_DIR / "sequences_test.npz")
         logger.info("")
         
+        # Extract metadata dynamically from Parquet file
+        data_metadata = extract_data_metadata()
+        
         # Log data versioning parameters (CRITICAL for comparing runs)
-        mlflow.log_param("data_version", "v2_295snapshots")
-        mlflow.log_param("data_records", 439579)
-        mlflow.log_param("data_date_range", "2025-10-01_to_2025-10-13")
+        mlflow.log_param("data_version", data_metadata['version'])
+        mlflow.log_param("data_records", data_metadata['records'])
+        mlflow.log_param("data_date_range", data_metadata['date_range'])
         mlflow.log_param("train_sequences", len(train_dataset))
         mlflow.log_param("val_sequences", len(val_dataset))
         mlflow.log_param("test_sequences", len(test_dataset))
-        mlflow.set_tag("data_version", "v2_295snapshots")
-        mlflow.set_tag("experiment_type", "baseline_v2")
+        mlflow.set_tag("data_version", data_metadata['version'])
+        mlflow.set_tag("experiment_type", f"training_{data_metadata['version']}")
         
-        # Create data loaders
+        # Create data loaders with parallel workers for faster data loading
         train_loader = DataLoader(
             train_dataset,
             batch_size=BATCH_SIZE,
-            shuffle=True,      # Shuffle training data
-            num_workers=0      # Single-threaded loading (Windows compatibility)
+            shuffle=True,           # Shuffle training data
+            num_workers=NUM_WORKERS,  # Parallel data loading (4 CPU cores)
+            pin_memory=True         # Faster data transfer to GPU
         )
         
         val_loader = DataLoader(
             val_dataset,
             batch_size=BATCH_SIZE,
             shuffle=False,
-            num_workers=0
+            num_workers=NUM_WORKERS,
+            pin_memory=True
         )
         
         test_loader = DataLoader(
             test_dataset,
             batch_size=BATCH_SIZE,
             shuffle=False,
-            num_workers=0
+            num_workers=NUM_WORKERS,
+            pin_memory=True
         )
         
         logger.info(f"✅ Data loaders created:")
@@ -618,9 +724,9 @@ def main():
                 'final_val_loss': float(val_losses[-1]),
             },
             'data': {
-                'version': 'v2_295snapshots',
-                'records': 439579,
-                'date_range': '2025-10-01_to_2025-10-13',
+                'version': data_metadata['version'],
+                'records': data_metadata['records'],
+                'date_range': data_metadata['date_range'],
                 'train_sequences': len(train_dataset),
                 'val_sequences': len(val_dataset),
                 'test_sequences': len(test_dataset),
