@@ -26,6 +26,8 @@ import json
 from typing import Dict, Tuple
 import matplotlib.pyplot as plt
 import logging
+import mlflow
+import mlflow.pytorch
 
 
 # ============================================================================
@@ -75,7 +77,11 @@ def setup_logging():
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
     log_file = MODEL_DIR / "training.log"
     
-    # Configure logging
+    # Remove any existing handlers to avoid conflicts
+    for handler in logging.root.handlers[:]:
+        logging.root.removeHandler(handler)
+    
+    # Configure logging with force=True to override any existing configuration
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(levelname)s - %(message)s',
@@ -83,7 +89,8 @@ def setup_logging():
         handlers=[
             logging.FileHandler(log_file, mode='a'),  # Append to file
             logging.StreamHandler()  # Also print to console
-        ]
+        ],
+        force=True  # Force reconfiguration
     )
     
     return logging.getLogger(__name__)
@@ -379,220 +386,292 @@ def main():
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
     
     # ========================================================================
-    # 1. LOAD DATASETS
+    # MLFLOW SETUP
     # ========================================================================
-    logger.info("📂 STEP 1: Loading datasets...")
-    train_dataset = VelibSequenceDataset(SILVER_DIR / "sequences_train.npz")
-    val_dataset = VelibSequenceDataset(SILVER_DIR / "sequences_val.npz")
-    test_dataset = VelibSequenceDataset(SILVER_DIR / "sequences_test.npz")
-    logger.info("")
+    logger.info("🔬 Setting up MLflow experiment tracking...")
+    mlflow.set_experiment("velib-lstm-training")
     
-    # Create data loaders
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=BATCH_SIZE,
-        shuffle=True,      # Shuffle training data
-        num_workers=0      # Single-threaded loading (Windows compatibility)
-    )
+    # Start MLflow run
+    with mlflow.start_run():
+        logger.info(f"   MLflow run ID: {mlflow.active_run().info.run_id}")
+        logger.info("")
     
-    val_loader = DataLoader(
-        val_dataset,
-        batch_size=BATCH_SIZE,
-        shuffle=False,
-        num_workers=0
-    )
-    
-    test_loader = DataLoader(
-        test_dataset,
-        batch_size=BATCH_SIZE,
-        shuffle=False,
-        num_workers=0
-    )
-    
-    logger.info(f"✅ Data loaders created:")
-    logger.info(f"   Train batches: {len(train_loader)}")
-    logger.info(f"   Val batches: {len(val_loader)}")
-    logger.info(f"   Test batches: {len(test_loader)}")
-    logger.info("")
-    
-    # ========================================================================
-    # 2. INITIALIZE MODEL
-    # ========================================================================
-    logger.info("🧠 STEP 2: Initializing model...")
-    model = MultiInputLSTM(
-        lstm_hidden_1=LSTM_HIDDEN_1,
-        lstm_hidden_2=LSTM_HIDDEN_2,
-        dense_hidden=DENSE_HIDDEN,
-        static_features_size=STATIC_FEATURES_SIZE,
-        output_size=OUTPUT_SIZE,
-        dropout_rate=DROPOUT_RATE
-    )
-    model = model.to(DEVICE)
-    
-    # Count parameters
-    total_params = sum(p.numel() for p in model.parameters())
-    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    
-    logger.info(f"✅ Model initialized:")
-    logger.info(f"   Total parameters: {total_params:,}")
-    logger.info(f"   Trainable parameters: {trainable_params:,}")
-    logger.info(f"   Model size: ~{total_params * 4 / 1e6:.2f} MB")
-    logger.info("")
-    
-    # ========================================================================
-    # 3. SETUP TRAINING
-    # ========================================================================
-    logger.info("⚙️  STEP 3: Setting up training...")
-    
-    # Loss function: Mean Squared Error
-    criterion = nn.MSELoss()
-    
-    # Optimizer: Adam (adaptive learning rate)
-    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
-    
-    # Learning rate scheduler: Reduce LR when validation loss plateaus
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer,
-        mode='min',
-        factor=0.5,        # Reduce LR by half
-        patience=5         # Wait 5 epochs before reducing
-    )
-    
-    logger.info(f"✅ Training setup:")
-    logger.info(f"   Loss function: MSE")
-    logger.info(f"   Optimizer: Adam (lr={LEARNING_RATE})")
-    logger.info(f"   Scheduler: ReduceLROnPlateau")
-    logger.info(f"   Batch size: {BATCH_SIZE}")
-    logger.info(f"   Max epochs: {NUM_EPOCHS}")
-    logger.info(f"   Early stopping patience: {PATIENCE}")
-    logger.info("")
-    
-    # ========================================================================
-    # 4. TRAINING LOOP
-    # ========================================================================
-    logger.info("🏋️  STEP 4: Training model...")
-    logger.info("="*80)
-    
-    best_val_loss = float('inf')
-    epochs_without_improvement = 0
-    train_losses = []
-    val_losses = []
-    
-    for epoch in range(NUM_EPOCHS):
-        logger.info(f"\n📍 Epoch {epoch + 1}/{NUM_EPOCHS}")
-        logger.info("-" * 80)
+        # ====================================================================
+        # 1. LOAD DATASETS
+        # ====================================================================
+        logger.info("📂 STEP 1: Loading datasets...")
+        train_dataset = VelibSequenceDataset(SILVER_DIR / "sequences_train.npz")
+        val_dataset = VelibSequenceDataset(SILVER_DIR / "sequences_val.npz")
+        test_dataset = VelibSequenceDataset(SILVER_DIR / "sequences_test.npz")
+        logger.info("")
         
-        # Train for one epoch
-        train_loss = train_one_epoch(model, train_loader, criterion, optimizer, DEVICE)
-        train_losses.append(train_loss)
+        # Log data versioning parameters (CRITICAL for comparing runs)
+        mlflow.log_param("data_version", "v2_295snapshots")
+        mlflow.log_param("data_records", 439579)
+        mlflow.log_param("data_date_range", "2025-10-01_to_2025-10-13")
+        mlflow.log_param("train_sequences", len(train_dataset))
+        mlflow.log_param("val_sequences", len(val_dataset))
+        mlflow.log_param("test_sequences", len(test_dataset))
+        mlflow.set_tag("data_version", "v2_295snapshots")
+        mlflow.set_tag("experiment_type", "baseline_v2")
         
-        # Validate
-        val_loss = validate(model, val_loader, criterion, DEVICE)
-        val_losses.append(val_loss)
+        # Create data loaders
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=BATCH_SIZE,
+            shuffle=True,      # Shuffle training data
+            num_workers=0      # Single-threaded loading (Windows compatibility)
+        )
         
-        # Update learning rate scheduler
-        scheduler.step(val_loss)
+        val_loader = DataLoader(
+            val_dataset,
+            batch_size=BATCH_SIZE,
+            shuffle=False,
+            num_workers=0
+        )
         
-        # Print epoch summary
-        logger.info(f"\n📊 Epoch {epoch + 1} Summary:")
-        logger.info(f"   Train Loss: {train_loss:.6f}")
-        logger.info(f"   Val Loss:   {val_loss:.6f}")
-        logger.info(f"   LR:         {optimizer.param_groups[0]['lr']:.6f}")
+        test_loader = DataLoader(
+            test_dataset,
+            batch_size=BATCH_SIZE,
+            shuffle=False,
+            num_workers=0
+        )
         
-        # Check if this is the best model so far
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
-            epochs_without_improvement = 0
+        logger.info(f"✅ Data loaders created:")
+        logger.info(f"   Train batches: {len(train_loader)}")
+        logger.info(f"   Val batches: {len(val_loader)}")
+        logger.info(f"   Test batches: {len(test_loader)}")
+        logger.info("")
+        
+        # ====================================================================
+        # 2. INITIALIZE MODEL
+        # ====================================================================
+        logger.info("🧠 STEP 2: Initializing model...")
+        model = MultiInputLSTM(
+            lstm_hidden_1=LSTM_HIDDEN_1,
+            lstm_hidden_2=LSTM_HIDDEN_2,
+            dense_hidden=DENSE_HIDDEN,
+            static_features_size=STATIC_FEATURES_SIZE,
+            output_size=OUTPUT_SIZE,
+            dropout_rate=DROPOUT_RATE
+        )
+        model = model.to(DEVICE)
+        
+        # Count parameters
+        total_params = sum(p.numel() for p in model.parameters())
+        trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        
+        logger.info(f"✅ Model initialized:")
+        logger.info(f"   Total parameters: {total_params:,}")
+        logger.info(f"   Trainable parameters: {trainable_params:,}")
+        logger.info(f"   Model size: ~{total_params * 4 / 1e6:.2f} MB")
+        logger.info("")
+        
+        # Log model architecture parameters to MLflow
+        mlflow.log_param("lstm_hidden_1", LSTM_HIDDEN_1)
+        mlflow.log_param("lstm_hidden_2", LSTM_HIDDEN_2)
+        mlflow.log_param("dense_hidden", DENSE_HIDDEN)
+        mlflow.log_param("dropout_rate", DROPOUT_RATE)
+        mlflow.log_param("static_features_size", STATIC_FEATURES_SIZE)
+        mlflow.log_param("output_size", OUTPUT_SIZE)
+        mlflow.log_param("total_parameters", total_params)
+        
+        # ====================================================================
+        # 3. SETUP TRAINING
+        # ====================================================================
+        logger.info("⚙️  STEP 3: Setting up training...")
+        
+        # Loss function: Mean Squared Error
+        criterion = nn.MSELoss()
+        
+        # Optimizer: Adam (adaptive learning rate)
+        optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
+        
+        # Learning rate scheduler: Reduce LR when validation loss plateaus
+        scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer,
+            mode='min',
+            factor=0.5,        # Reduce LR by half
+            patience=5         # Wait 5 epochs before reducing
+        )
+        
+        logger.info(f"✅ Training setup:")
+        logger.info(f"   Loss function: MSE")
+        logger.info(f"   Optimizer: Adam (lr={LEARNING_RATE})")
+        logger.info(f"   Scheduler: ReduceLROnPlateau")
+        logger.info(f"   Batch size: {BATCH_SIZE}")
+        logger.info(f"   Max epochs: {NUM_EPOCHS}")
+        logger.info(f"   Early stopping patience: {PATIENCE}")
+        logger.info("")
+        
+        # Log training hyperparameters to MLflow
+        mlflow.log_param("batch_size", BATCH_SIZE)
+        mlflow.log_param("learning_rate", LEARNING_RATE)
+        mlflow.log_param("num_epochs_max", NUM_EPOCHS)
+        mlflow.log_param("early_stopping_patience", PATIENCE)
+        mlflow.log_param("optimizer", "Adam")
+        mlflow.log_param("loss_function", "MSELoss")
+        mlflow.log_param("device", str(DEVICE))
+        
+        # ====================================================================
+        # 4. TRAINING LOOP
+        # ====================================================================
+        logger.info("🏋️  STEP 4: Training model...")
+        logger.info("="*80)
+        
+        best_val_loss = float('inf')
+        epochs_without_improvement = 0
+        train_losses = []
+        val_losses = []
+        
+        for epoch in range(NUM_EPOCHS):
+            logger.info(f"\n📍 Epoch {epoch + 1}/{NUM_EPOCHS}")
+            logger.info("-" * 80)
             
-            # Save best model
-            model_path = MODEL_DIR / "best_model.pth"
-            torch.save({
-                'epoch': epoch + 1,
-                'model_state_dict': model.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'train_loss': train_loss,
-                'val_loss': val_loss,
-            }, model_path)
-            logger.info(f"   ✅ New best model saved! (Val Loss: {val_loss:.6f})")
-        else:
-            epochs_without_improvement += 1
-            logger.info(f"   ⏸️  No improvement for {epochs_without_improvement} epoch(s)")
+            # Train for one epoch
+            train_loss = train_one_epoch(model, train_loader, criterion, optimizer, DEVICE)
+            train_losses.append(train_loss)
+            
+            # Validate
+            val_loss = validate(model, val_loader, criterion, DEVICE)
+            val_losses.append(val_loss)
+            
+            # Log metrics to MLflow
+            mlflow.log_metric("train_loss", train_loss, step=epoch)
+            mlflow.log_metric("val_loss", val_loss, step=epoch)
+            mlflow.log_metric("learning_rate", optimizer.param_groups[0]['lr'], step=epoch)
+            
+            # Update learning rate scheduler
+            scheduler.step(val_loss)
+            
+            # Print epoch summary
+            logger.info(f"\n📊 Epoch {epoch + 1} Summary:")
+            logger.info(f"   Train Loss: {train_loss:.6f}")
+            logger.info(f"   Val Loss:   {val_loss:.6f}")
+            logger.info(f"   LR:         {optimizer.param_groups[0]['lr']:.6f}")
+            
+            # Check if this is the best model so far
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                epochs_without_improvement = 0
+                
+                # Save best model
+                model_path = MODEL_DIR / "best_model.pth"
+                torch.save({
+                    'epoch': epoch + 1,
+                    'model_state_dict': model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'train_loss': train_loss,
+                    'val_loss': val_loss,
+                }, model_path)
+                logger.info(f"   ✅ New best model saved! (Val Loss: {val_loss:.6f})")
+            else:
+                epochs_without_improvement += 1
+                logger.info(f"   ⏸️  No improvement for {epochs_without_improvement} epoch(s)")
+            
+            # Early stopping
+            if epochs_without_improvement >= PATIENCE:
+                logger.info(f"\n⏹️  Early stopping triggered after {epoch + 1} epochs")
+                break
         
-        # Early stopping
-        if epochs_without_improvement >= PATIENCE:
-            logger.info(f"\n⏹️  Early stopping triggered after {epoch + 1} epochs")
-            break
-    
-    logger.info("\n" + "="*80)
-    logger.info("✅ TRAINING COMPLETE!")
-    logger.info("="*80)
-    
-    # ========================================================================
-    # 5. SAVE TRAINING ARTIFACTS
-    # ========================================================================
-    logger.info("\n💾 STEP 5: Saving training artifacts...")
-    
-    # Plot training history
-    plot_path = MODEL_DIR / "training_history.png"
-    plot_training_history(train_losses, val_losses, plot_path)
-    
-    # Save training config
-    config = {
-        'architecture': {
-            'lstm_hidden_1': LSTM_HIDDEN_1,
-            'lstm_hidden_2': LSTM_HIDDEN_2,
-            'dense_hidden': DENSE_HIDDEN,
-            'dropout_rate': DROPOUT_RATE,
-            'static_features_size': STATIC_FEATURES_SIZE,
-            'output_size': OUTPUT_SIZE,
-        },
-        'training': {
-            'batch_size': BATCH_SIZE,
-            'learning_rate': LEARNING_RATE,
-            'num_epochs': len(train_losses),
-            'patience': PATIENCE,
-        },
-        'results': {
-            'best_val_loss': float(best_val_loss),
-            'final_train_loss': float(train_losses[-1]),
-            'final_val_loss': float(val_losses[-1]),
-        },
-        'device': str(DEVICE),
-        'trained_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-    }
-    
-    config_path = MODEL_DIR / "config.json"
-    with open(config_path, 'w') as f:
-        json.dump(config, f, indent=2)
-    logger.info(f"✅ Config saved to {config_path}")
-    
-    # Save training history
-    history_path = MODEL_DIR / "training_history.npz"
-    np.savez(
-        history_path,
-        train_losses=np.array(train_losses),
-        val_losses=np.array(val_losses)
-    )
-    logger.info(f"✅ Training history saved to {history_path}")
-    
-    # ========================================================================
-    # 6. FINAL SUMMARY
-    # ========================================================================
-    logger.info("\n" + "="*80)
-    logger.info("📊 TRAINING SUMMARY")
-    logger.info("="*80)
-    logger.info(f"Total epochs: {len(train_losses)}")
-    logger.info(f"Best validation loss: {best_val_loss:.6f}")
-    logger.info(f"Final train loss: {train_losses[-1]:.6f}")
-    logger.info(f"Final validation loss: {val_losses[-1]:.6f}")
-    logger.info(f"\n📁 Model artifacts saved to: {MODEL_DIR}")
-    logger.info(f"   - best_model.pth (model weights)")
-    logger.info(f"   - config.json (architecture & hyperparameters)")
-    logger.info(f"   - training_history.png (loss curves)")
-    logger.info(f"   - training_history.npz (raw loss values)")
-    logger.info("\n🎉 Ready for evaluation and deployment!")
-    logger.info("="*80)
-    logger.info(f"Completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        logger.info("\n" + "="*80)
+        logger.info("✅ TRAINING COMPLETE!")
+        logger.info("="*80)
+        
+        # Log final metrics to MLflow
+        mlflow.log_metric("best_val_loss", best_val_loss)
+        mlflow.log_metric("final_train_loss", train_losses[-1])
+        mlflow.log_metric("final_val_loss", val_losses[-1])
+        mlflow.log_metric("epochs_trained", len(train_losses))
+        
+        # ====================================================================
+        # 5. SAVE TRAINING ARTIFACTS
+        # ====================================================================
+        logger.info("\n💾 STEP 5: Saving training artifacts...")
+        
+        # Plot training history
+        plot_path = MODEL_DIR / "training_history.png"
+        plot_training_history(train_losses, val_losses, plot_path)
+        
+        # Log plot to MLflow
+        mlflow.log_artifact(str(plot_path))
+        
+        # Save training config
+        config = {
+            'architecture': {
+                'lstm_hidden_1': LSTM_HIDDEN_1,
+                'lstm_hidden_2': LSTM_HIDDEN_2,
+                'dense_hidden': DENSE_HIDDEN,
+                'dropout_rate': DROPOUT_RATE,
+                'static_features_size': STATIC_FEATURES_SIZE,
+                'output_size': OUTPUT_SIZE,
+            },
+            'training': {
+                'batch_size': BATCH_SIZE,
+                'learning_rate': LEARNING_RATE,
+                'num_epochs': len(train_losses),
+                'patience': PATIENCE,
+            },
+            'results': {
+                'best_val_loss': float(best_val_loss),
+                'final_train_loss': float(train_losses[-1]),
+                'final_val_loss': float(val_losses[-1]),
+            },
+            'data': {
+                'version': 'v2_295snapshots',
+                'records': 439579,
+                'date_range': '2025-10-01_to_2025-10-13',
+                'train_sequences': len(train_dataset),
+                'val_sequences': len(val_dataset),
+                'test_sequences': len(test_dataset),
+            },
+            'device': str(DEVICE),
+            'trained_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        }
+        
+        config_path = MODEL_DIR / "config.json"
+        with open(config_path, 'w') as f:
+            json.dump(config, f, indent=2)
+        logger.info(f"✅ Config saved to {config_path}")
+        
+        # Log config to MLflow
+        mlflow.log_artifact(str(config_path))
+        
+        # Save training history
+        history_path = MODEL_DIR / "training_history.npz"
+        np.savez(
+            history_path,
+            train_losses=np.array(train_losses),
+            val_losses=np.array(val_losses)
+        )
+        logger.info(f"✅ Training history saved to {history_path}")
+        
+        # Log model to MLflow
+        mlflow.pytorch.log_model(model, "model")
+        logger.info(f"✅ Model logged to MLflow")
+        
+        # ====================================================================
+        # 6. FINAL SUMMARY
+        # ====================================================================
+        logger.info("\n" + "="*80)
+        logger.info("📊 TRAINING SUMMARY")
+        logger.info("="*80)
+        logger.info(f"Total epochs: {len(train_losses)}")
+        logger.info(f"Best validation loss: {best_val_loss:.6f}")
+        logger.info(f"Final train loss: {train_losses[-1]:.6f}")
+        logger.info(f"Final validation loss: {val_losses[-1]:.6f}")
+        logger.info(f"\n📁 Model artifacts saved to: {MODEL_DIR}")
+        logger.info(f"   - best_model.pth (model weights)")
+        logger.info(f"   - config.json (architecture & hyperparameters)")
+        logger.info(f"   - training_history.png (loss curves)")
+        logger.info(f"   - training_history.npz (raw loss values)")
+        logger.info(f"\n🔬 MLflow tracking:")
+        logger.info(f"   - Run ID: {mlflow.active_run().info.run_id}")
+        logger.info(f"   - Experiment: velib-lstm-training")
+        logger.info(f"   - View UI: mlflow ui (http://localhost:5000)")
+        logger.info("\n🎉 Ready for evaluation and deployment!")
+        logger.info("="*80)
+        logger.info(f"Completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
 
 if __name__ == "__main__":

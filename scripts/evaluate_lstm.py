@@ -27,6 +27,8 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from typing import Dict, Tuple, List
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+import mlflow
+import mlflow.pytorch
 
 # Import the model architecture from training script
 import sys
@@ -62,6 +64,10 @@ def setup_logging():
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     log_file = RESULTS_DIR / "evaluation.log"
     
+    # Remove any existing handlers (fix for MLflow interference)
+    for handler in logging.root.handlers[:]:
+        logging.root.removeHandler(handler)
+    
     # Configure logging
     logging.basicConfig(
         level=logging.INFO,
@@ -70,7 +76,8 @@ def setup_logging():
         handlers=[
             logging.FileHandler(log_file, mode='a'),  # Append to file
             logging.StreamHandler()  # Also print to console
-        ]
+        ],
+        force=True  # Force reconfiguration even if already configured
     )
     
     return logging.getLogger(__name__)
@@ -516,65 +523,132 @@ def main():
     # Create results directory
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     
-    # Load model and config
-    model, config = load_model_and_config()
+    # ========================================================================
+    # MLflow Setup
+    # ========================================================================
+    mlflow.set_experiment("velib-lstm-training")
     
-    # Load scaler
-    scaler = load_scaler()
+    # Start a new run for evaluation (will be linked to training run via tags)
+    with mlflow.start_run(run_name="evaluation_v2_295snapshots"):
+        logger.info("📊 MLflow tracking enabled")
+        logger.info(f"   Experiment: velib-lstm-training")
+        logger.info(f"   Run: evaluation_v2_295snapshots")
+        logger.info("")
     
-    # Load test dataset
-    logger.info("📂 Loading test dataset...")
-    test_dataset = VelibSequenceDataset(SILVER_DIR / "sequences_test.npz")
-    logger.info("")
-    
-    # Make predictions (will denormalize internally)
-    predictions, targets = make_predictions(model, test_dataset, scaler)
-    
-    # Calculate metrics
-    metrics = calculate_metrics(predictions, targets)
-    
-    # Generate visualizations
-    logger.info("📊 Generating visualizations...")
-    plot_predictions_vs_actual(
-        predictions, targets, 
-        RESULTS_DIR / "predictions_vs_actual.png"
-    )
-    plot_error_distribution(
-        predictions, targets,
-        RESULTS_DIR / "error_distribution.png"
-    )
-    plot_metrics_comparison(
-        metrics,
-        RESULTS_DIR / "metrics_comparison.png"
-    )
-    plot_sample_predictions(
-        predictions, targets, test_dataset,
-        RESULTS_DIR / "sample_predictions.png"
-    )
-    logger.info("")
-    
-    # Save metrics report
-    save_metrics_report(
-        metrics, predictions, targets,
-        RESULTS_DIR / "evaluation_report.txt"
-    )
-    
-    # Final summary
-    logger.info("\n" + "="*80)
-    logger.info("✅ EVALUATION COMPLETE!")
-    logger.info("="*80)
-    logger.info(f"\n📊 Quick Summary:")
-    logger.info(f"  T+1h: MAE={metrics['T+1h']['mae']:.2f} bikes, R²={metrics['T+1h']['r2']:.3f}")
-    logger.info(f"  T+2h: MAE={metrics['T+2h']['mae']:.2f} bikes, R²={metrics['T+2h']['r2']:.3f}")
-    logger.info(f"  T+3h: MAE={metrics['T+3h']['mae']:.2f} bikes, R²={metrics['T+3h']['r2']:.3f}")
-    logger.info(f"\n📁 Results saved to: {RESULTS_DIR}")
-    logger.info(f"  - predictions_vs_actual.png")
-    logger.info(f"  - error_distribution.png")
-    logger.info(f"  - metrics_comparison.png")
-    logger.info(f"  - sample_predictions.png")
-    logger.info(f"  - evaluation_report.txt")
-    logger.info("\n" + "="*80)
-    logger.info(f"Completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        # ====================================================================
+        # Load Model and Data
+        # ====================================================================
+        
+        # Load model and config
+        model, config = load_model_and_config()
+        
+        # Log data version for linking with training run
+        mlflow.set_tag("data_version", config['data']['version'])
+        mlflow.set_tag("experiment_type", "evaluation")
+        mlflow.set_tag("model_trained_at", config['trained_at'])
+        
+        # Load scaler
+        scaler = load_scaler()
+        
+        # Load test dataset
+        logger.info("📂 Loading test dataset...")
+        test_dataset = VelibSequenceDataset(SILVER_DIR / "sequences_test.npz")
+        logger.info("")
+        
+        # ====================================================================
+        # Evaluation
+        # ====================================================================
+        
+        # Make predictions (will denormalize internally)
+        predictions, targets = make_predictions(model, test_dataset, scaler)
+        
+        # Calculate metrics
+        metrics = calculate_metrics(predictions, targets)
+        
+        # ====================================================================
+        # Log Metrics to MLflow
+        # ====================================================================
+        logger.info("📊 Logging metrics to MLflow...")
+        
+        # Log test set size
+        mlflow.log_param("test_sequences", len(test_dataset))
+        
+        # Log metrics for each horizon (replace + with _ for MLflow compatibility)
+        for horizon, mlflow_prefix in [('T+1h', 'T1h'), ('T+2h', 'T2h'), ('T+3h', 'T3h')]:
+            mlflow.log_metric(f"{mlflow_prefix}_mae", metrics[horizon]['mae'])
+            mlflow.log_metric(f"{mlflow_prefix}_rmse", metrics[horizon]['rmse'])
+            mlflow.log_metric(f"{mlflow_prefix}_r2", metrics[horizon]['r2'])
+            mlflow.log_metric(f"{mlflow_prefix}_mean_error", metrics[horizon]['mean_error'])
+            mlflow.log_metric(f"{mlflow_prefix}_std_error", metrics[horizon]['std_error'])
+        
+        logger.info("✅ Metrics logged to MLflow")
+        logger.info("")
+        
+        # ====================================================================
+        # Generate Visualizations
+        # ====================================================================
+        logger.info("📊 Generating visualizations...")
+        plot_predictions_vs_actual(
+            predictions, targets, 
+            RESULTS_DIR / "predictions_vs_actual.png"
+        )
+        plot_error_distribution(
+            predictions, targets,
+            RESULTS_DIR / "error_distribution.png"
+        )
+        plot_metrics_comparison(
+            metrics,
+            RESULTS_DIR / "metrics_comparison.png"
+        )
+        plot_sample_predictions(
+            predictions, targets, test_dataset,
+            RESULTS_DIR / "sample_predictions.png"
+        )
+        logger.info("")
+        
+        # Log visualization artifacts to MLflow
+        logger.info("📊 Logging artifacts to MLflow...")
+        mlflow.log_artifact(str(RESULTS_DIR / "predictions_vs_actual.png"))
+        mlflow.log_artifact(str(RESULTS_DIR / "error_distribution.png"))
+        mlflow.log_artifact(str(RESULTS_DIR / "metrics_comparison.png"))
+        mlflow.log_artifact(str(RESULTS_DIR / "sample_predictions.png"))
+        logger.info("✅ Artifacts logged to MLflow")
+        logger.info("")
+        
+        # ====================================================================
+        # ====================================================================
+        # Save Metrics Report
+        # ====================================================================
+        save_metrics_report(
+            metrics, predictions, targets,
+            RESULTS_DIR / "evaluation_report.txt"
+        )
+        
+        # Log report to MLflow
+        mlflow.log_artifact(str(RESULTS_DIR / "evaluation_report.txt"))
+        
+        # ====================================================================
+        # Final Summary
+        # ====================================================================
+        logger.info("\n" + "="*80)
+        logger.info("✅ EVALUATION COMPLETE!")
+        logger.info("="*80)
+        logger.info(f"\n📊 Quick Summary:")
+        logger.info(f"  T+1h: MAE={metrics['T+1h']['mae']:.2f} bikes, R²={metrics['T+1h']['r2']:.3f}")
+        logger.info(f"  T+2h: MAE={metrics['T+2h']['mae']:.2f} bikes, R²={metrics['T+2h']['r2']:.3f}")
+        logger.info(f"  T+3h: MAE={metrics['T+3h']['mae']:.2f} bikes, R²={metrics['T+3h']['r2']:.3f}")
+        logger.info(f"\n📁 Results saved to: {RESULTS_DIR}")
+        logger.info(f"  - predictions_vs_actual.png")
+        logger.info(f"  - error_distribution.png")
+        logger.info(f"  - metrics_comparison.png")
+        logger.info(f"  - sample_predictions.png")
+        logger.info(f"  - evaluation_report.txt")
+        logger.info(f"\n📊 MLflow tracking:")
+        logger.info(f"  - Metrics logged for T+1h, T+2h, T+3h")
+        logger.info(f"  - Artifacts uploaded (plots + report)")
+        logger.info(f"  - View at: http://localhost:5000")
+        logger.info("\n" + "="*80)
+        logger.info(f"Completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
 
 if __name__ == "__main__":
