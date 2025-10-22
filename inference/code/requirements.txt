@@ -4,8 +4,8 @@
 # Deep Learning Framework
 torch==2.0.1
 
-# Data Processing
-numpy==1.24.3
+# Data Processing - use flexible numpy version for compatibility
+numpy>=1.23.0,<2.0.0
 scikit-learn==1.3.0
 
 # Note: boto3 is already available in SageMaker containers, no need to install

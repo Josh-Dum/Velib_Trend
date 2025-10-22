@@ -21,6 +21,7 @@ from typing import Any, Dict, List
 import numpy as np
 import torch
 import torch.nn as nn
+from sklearn.preprocessing import StandardScaler  # Required to unpickle scaler
 
 
 # ============================================================================
@@ -112,71 +113,82 @@ def model_fn(model_dir: str) -> Dict[str, Any]:
     Returns:
         dict: Contains model, scaler, station_mappings, config
     """
-    print(f"[model_fn] Loading model from: {model_dir}")
+    try:
+        print(f"[model_fn] Loading model from: {model_dir}")
+        
+        # Use CPU for inference (cheaper than GPU for serverless)
+        device = torch.device("cpu")
+        
+        # Load configuration
+        config_path = os.path.join(model_dir, "config.json")
+        print(f"[model_fn] Loading config from: {config_path}")
+        with open(config_path, 'r') as f:
+            config = json.load(f)
+        
+        # Load station mappings
+        mappings_path = os.path.join(model_dir, "station_mappings.json")
+        print(f"[model_fn] Loading station mappings from: {mappings_path}")
+        with open(mappings_path, 'r') as f:
+            station_mappings = json.load(f)
+        
+        # Load scaler (for normalization/denormalization)
+        scaler_path = os.path.join(model_dir, "scaler.pkl")
+        print(f"[model_fn] Loading scaler from: {scaler_path}")
+        with open(scaler_path, 'rb') as f:
+            scaler = pickle.load(f)
+        print(f"[model_fn] Scaler loaded successfully!")
+        
+        # Initialize model with config
+        print(f"[model_fn] Initializing model architecture...")
+        model = MultiInputLSTM(
+            lstm_hidden_1=config.get('lstm_hidden_1', 128),
+            lstm_hidden_2=config.get('lstm_hidden_2', 64),
+            dense_hidden=config.get('dense_hidden', 32),
+            static_features_size=config.get('static_features_size', 7),
+            output_size=config.get('output_size', 3),
+            dropout_rate=config.get('dropout_rate', 0.2)
+        )
+        
+        # Load trained weights
+        model_path = os.path.join(model_dir, "best_model.pth")
+        print(f"[model_fn] Loading model weights from: {model_path}")
+        
+        # Load checkpoint (contains model_state_dict, optimizer, epoch, etc.)
+        checkpoint = torch.load(model_path, map_location=device)
+        
+        # Extract just the model weights from checkpoint
+        if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+            model.load_state_dict(checkpoint['model_state_dict'])
+            print(f"[model_fn] Loaded checkpoint from epoch {checkpoint.get('epoch', 'unknown')}")
+        else:
+            # If it's just the state dict directly (not a checkpoint)
+            model.load_state_dict(checkpoint)
+        
+        # Set to evaluation mode (disables dropout)
+        model.eval()
+        model.to(device)
+        
+        print(f"[model_fn] Model loaded successfully!")
+        print(f"[model_fn] - Parameters: {sum(p.numel() for p in model.parameters()):,}")
+        print(f"[model_fn] - Stations: {len(station_mappings)}")
+        
+        # Return everything needed for inference
+        return {
+            'model': model,
+            'scaler': scaler,
+            'station_mappings': station_mappings,
+            'config': config,
+            'device': device
+        }
     
-    # Use CPU for inference (cheaper than GPU for serverless)
-    device = torch.device("cpu")
-    
-    # Load configuration
-    config_path = os.path.join(model_dir, "config.json")
-    print(f"[model_fn] Loading config from: {config_path}")
-    with open(config_path, 'r') as f:
-        config = json.load(f)
-    
-    # Load station mappings
-    mappings_path = os.path.join(model_dir, "station_mappings.json")
-    print(f"[model_fn] Loading station mappings from: {mappings_path}")
-    with open(mappings_path, 'r') as f:
-        station_mappings = json.load(f)
-    
-    # Load scaler (for normalization/denormalization)
-    scaler_path = os.path.join(model_dir, "scaler.pkl")
-    print(f"[model_fn] Loading scaler from: {scaler_path}")
-    with open(scaler_path, 'rb') as f:
-        scaler = pickle.load(f)
-    
-    # Initialize model with config
-    print(f"[model_fn] Initializing model architecture...")
-    model = MultiInputLSTM(
-        lstm_hidden_1=config.get('lstm_hidden_1', 128),
-        lstm_hidden_2=config.get('lstm_hidden_2', 64),
-        dense_hidden=config.get('dense_hidden', 32),
-        static_features_size=config.get('static_features_size', 7),
-        output_size=config.get('output_size', 3),
-        dropout_rate=config.get('dropout_rate', 0.2)
-    )
-    
-    # Load trained weights
-    model_path = os.path.join(model_dir, "best_model.pth")
-    print(f"[model_fn] Loading model weights from: {model_path}")
-    
-    # Load checkpoint (contains model_state_dict, optimizer, epoch, etc.)
-    checkpoint = torch.load(model_path, map_location=device)
-    
-    # Extract just the model weights from checkpoint
-    if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
-        model.load_state_dict(checkpoint['model_state_dict'])
-        print(f"[model_fn] Loaded checkpoint from epoch {checkpoint.get('epoch', 'unknown')}")
-    else:
-        # If it's just the state dict directly (not a checkpoint)
-        model.load_state_dict(checkpoint)
-    
-    # Set to evaluation mode (disables dropout)
-    model.eval()
-    model.to(device)
-    
-    print(f"[model_fn] Model loaded successfully!")
-    print(f"[model_fn] - Parameters: {sum(p.numel() for p in model.parameters()):,}")
-    print(f"[model_fn] - Stations: {len(station_mappings)}")
-    
-    # Return everything needed for inference
-    return {
-        'model': model,
-        'scaler': scaler,
-        'station_mappings': station_mappings,
-        'config': config,
-        'device': device
-    }
+    except Exception as e:
+        print(f"[model_fn] ERROR: Failed to load model!")
+        print(f"[model_fn] Exception type: {type(e).__name__}")
+        print(f"[model_fn] Exception message: {str(e)}")
+        import traceback
+        print(f"[model_fn] Traceback:")
+        traceback.print_exc()
+        raise
 
 
 def input_fn(request_body: str, content_type: str = 'application/json') -> Dict[str, Any]:
