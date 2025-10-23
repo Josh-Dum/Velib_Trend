@@ -149,6 +149,13 @@ def predict_station(station_code: str) -> Dict[str, Any]:
                         "time": (now + timedelta(hours=3)).replace(minute=0, second=0, microsecond=0).isoformat()
                     }
                 },
+                "historical_24h": [
+                    {
+                        "bikes": bikes,
+                        "time": (now - timedelta(hours=23-i)).replace(minute=0, second=0, microsecond=0).isoformat()
+                    }
+                    for i, bikes in enumerate(historical_bikes)
+                ],
                 "model": {
                     "version": response_body.get('model_version', 'unknown'),
                     "inference_time_ms": response_body.get('inference_time_ms', 0)
