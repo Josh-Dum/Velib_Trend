@@ -15,25 +15,40 @@ st.set_page_config(page_title="Velib Trend — Paris Bike Predictions", layout="
 st.title("🚴 Velib Trend")
 st.caption("Real-time availability & AI-powered predictions for Paris bike stations")
 
-# Sidebar with minimal controls
+# Sidebar with page navigation
 with st.sidebar:
-    st.markdown("### 🔍 Mode")
-    if "mode" not in st.session_state:
-        st.session_state.mode = "bike"
-    mode = st.radio(
-        "What are you looking for?",
-        ["bike", "dock"],
-        format_func=lambda x: "🚴 Find a bike" if x == "bike" else "🅿️ Find a dock",
-        key="mode_selector"
+    st.markdown("### 🗺️ Navigation")
+    page = st.radio(
+        "Choose a feature:",
+        ["🗺️ Explore Map", "🚴 Plan Journey"],
+        key="page_selector"
     )
-    st.session_state.mode = mode
     
     st.markdown("---")
     
-    # Collapsible advanced options
-    with st.expander("⚙️ Advanced Options"):
-        validate = st.checkbox("Validate data types", value=True)
-        refresh = st.button("🔄 Refresh data")
+    # Mode selection (only show for Explore Map)
+    if page == "🗺️ Explore Map":
+        st.markdown("### 🔍 Mode")
+        if "mode" not in st.session_state:
+            st.session_state.mode = "bike"
+        mode = st.radio(
+            "What are you looking for?",
+            ["bike", "dock"],
+            format_func=lambda x: "🚴 Find a bike" if x == "bike" else "🅿️ Find a dock",
+            key="mode_selector"
+        )
+        st.session_state.mode = mode
+        
+        st.markdown("---")
+        
+        # Collapsible advanced options
+        with st.expander("⚙️ Advanced Options"):
+            validate = st.checkbox("Validate data types", value=True)
+            refresh = st.button("🔄 Refresh data")
+    else:
+        # Journey Planner page - set defaults
+        validate = True
+        refresh = False
     
     st.markdown("---")
     st.markdown("### 📊 About")
@@ -77,79 +92,82 @@ if refresh:
 try:
     df = load_data(validate=validate)
 
-    # Simple color-coded circles (fixed radius) by availability percentage (bike or dock mode)
-    if not df.empty:
-        df["numbikesavailable"] = pd.to_numeric(df.get("numbikesavailable"), errors="coerce")
-        df["numdocksavailable"] = pd.to_numeric(df.get("numdocksavailable"), errors="coerce")
-        if "capacity" in df.columns:
-            df["capacity"] = pd.to_numeric(df["capacity"], errors="coerce")
-        else:
-            df["capacity"] = (df["numbikesavailable"].fillna(0) + df["numdocksavailable"].fillna(0))
-        df["capacity"] = df["capacity"].fillna(0)
-        with np.errstate(divide='ignore', invalid='ignore'):
-            pct = df["numbikesavailable"] / df["capacity"].replace(0, np.nan)
-        pct = pct.replace([np.inf, -np.inf], np.nan).fillna(0.0).clip(0, 1)
-        df["pct_bikes"] = pct
-        with np.errstate(divide='ignore', invalid='ignore'):
-            pctd = df["numdocksavailable"] / df["capacity"].replace(0, np.nan)
-        pctd = pctd.replace([np.inf, -np.inf], np.nan).fillna(0.0).clip(0, 1)
-        df["pct_docks"] = pctd
+    # ==================== PAGE ROUTING ====================
+    if page == "🗺️ Explore Map":
+        # ==================== EXPLORE MAP PAGE ====================
+        # Simple color-coded circles (fixed radius) by availability percentage (bike or dock mode)
+        if not df.empty:
+            df["numbikesavailable"] = pd.to_numeric(df.get("numbikesavailable"), errors="coerce")
+            df["numdocksavailable"] = pd.to_numeric(df.get("numdocksavailable"), errors="coerce")
+            if "capacity" in df.columns:
+                df["capacity"] = pd.to_numeric(df["capacity"], errors="coerce")
+            else:
+                df["capacity"] = (df["numbikesavailable"].fillna(0) + df["numdocksavailable"].fillna(0))
+            df["capacity"] = df["capacity"].fillna(0)
+            with np.errstate(divide='ignore', invalid='ignore'):
+                pct = df["numbikesavailable"] / df["capacity"].replace(0, np.nan)
+            pct = pct.replace([np.inf, -np.inf], np.nan).fillna(0.0).clip(0, 1)
+            df["pct_bikes"] = pct
+            with np.errstate(divide='ignore', invalid='ignore'):
+                pctd = df["numdocksavailable"] / df["capacity"].replace(0, np.nan)
+            pctd = pctd.replace([np.inf, -np.inf], np.nan).fillna(0.0).clip(0, 1)
+            df["pct_docks"] = pctd
 
-        # Select metric based on mode
-        mode = st.session_state.get("mode", "bike")
-        metric_col = "pct_bikes" if mode == "bike" else "pct_docks"
-        df["metric"] = df[metric_col]
+            # Select metric based on mode
+            mode = st.session_state.get("mode", "bike")
+            metric_col = "pct_bikes" if mode == "bike" else "pct_docks"
+            df["metric"] = df[metric_col]
 
-        def pct_to_color(row):
-            cap = row.get("capacity", 0)
-            if pd.isna(cap) or cap == 0:
-                return [0, 0, 0, 220]  # black
-            v = float(row["metric"])
-            if v < 0.3:
-                return [230, 57, 70, 220]  # red
-            if v < 0.6:
-                return [253, 180, 70, 220]  # orange-ish
-            return [70, 160, 60, 220]      # green
+            def pct_to_color(row):
+                cap = row.get("capacity", 0)
+                if pd.isna(cap) or cap == 0:
+                    return [0, 0, 0, 220]  # black
+                v = float(row["metric"])
+                if v < 0.3:
+                    return [230, 57, 70, 220]  # red
+                if v < 0.6:
+                    return [253, 180, 70, 220]  # orange-ish
+                return [70, 160, 60, 220]      # green
 
-        # Apply row-wise for clarity
-        df["color"] = df.apply(pct_to_color, axis=1)
+            # Apply row-wise for clarity
+            df["color"] = df.apply(pct_to_color, axis=1)
 
-        df["lat"] = pd.to_numeric(df.get("lat"), errors="coerce")
-        df["lon"] = pd.to_numeric(df.get("lon"), errors="coerce")
-        map_df = df.dropna(subset=["lat", "lon"]).copy()
-        
-        # ============================================================
-        # SEARCH BAR AT THE TOP (PROMINENT)
-        # ============================================================
-        st.markdown("---")
-        st.markdown("## 🔍 Find a Station")
-        
-        # Create searchable options with station name and code
-        station_options = {}
-        station_lookup = {}  # Map display_text -> station data
-        for _, row in map_df.iterrows():
-            station_name = row.get('name', 'Unknown')
-            station_code = str(row.get('stationcode', ''))
-            # Format: "Station Name (Code)"
-            display_text = f"{station_name} ({station_code})"
-            station_options[display_text] = station_code
-            station_lookup[display_text] = row
-        
-        # Sort by station name
-        sorted_options = [""] + sorted(station_options.keys())
-        
-        selected_station = st.selectbox(
-            "Search by station name",
-            options=sorted_options,
-            help="Start typing a station name (e.g., 'République', 'Bastille', 'Louvre')",
-            placeholder="Type to search...",
-            label_visibility="collapsed"
-        )
-        
-        # Get the station code from selection
-        station_code_input = station_options.get(selected_station, "") if selected_station else ""
-        
-        # ============================================================
+            df["lat"] = pd.to_numeric(df.get("lat"), errors="coerce")
+            df["lon"] = pd.to_numeric(df.get("lon"), errors="coerce")
+            map_df = df.dropna(subset=["lat", "lon"]).copy()
+            
+            # ============================================================
+            # SEARCH BAR AT THE TOP (PROMINENT)
+            # ============================================================
+            st.markdown("---")
+            st.markdown("## 🔍 Find a Station")
+            
+            # Create searchable options with station name and code
+            station_options = {}
+            station_lookup = {}  # Map display_text -> station data
+            for _, row in map_df.iterrows():
+                station_name = row.get('name', 'Unknown')
+                station_code = str(row.get('stationcode', ''))
+                # Format: "Station Name (Code)"
+                display_text = f"{station_name} ({station_code})"
+                station_options[display_text] = station_code
+                station_lookup[display_text] = row
+            
+            # Sort by station name
+            sorted_options = [""] + sorted(station_options.keys())
+            
+            selected_station = st.selectbox(
+                "Search by station name",
+                options=sorted_options,
+                help="Start typing a station name (e.g., 'République', 'Bastille', 'Louvre')",
+                placeholder="Type to search...",
+                label_visibility="collapsed"
+            )
+            
+            # Get the station code from selection
+            station_code_input = station_options.get(selected_station, "") if selected_station else ""
+            
+            # ============================================================
         # MAP WITH ZOOM TO SELECTED STATION
         # ============================================================
         if not map_df.empty:
@@ -516,6 +534,252 @@ try:
                             import traceback
                             st.error(f"❌ **Error**: {str(e)}")
                             st.code(traceback.format_exc())
+    
+    # ==================== JOURNEY PLANNER PAGE ====================
+    elif page == "🚴 Plan Journey":
+        from journey_planner import (
+            geocode_address,
+            plan_route,
+            get_prediction_at_time,
+            get_journey_verdict
+        )
+        
+        st.markdown("## 🚴 Plan Your Journey")
+        st.markdown("Enter your start and destination addresses, and we'll find the best stations for you!")
+        
+        # Input form
+        col1, col2 = st.columns(2)
+        with col1:
+            start_address = st.text_input(
+                "📍 From (start location)",
+                placeholder="e.g., 24 Rue de Rivoli, Paris",
+                help="Enter your starting address"
+            )
+        with col2:
+            dest_address = st.text_input(
+                "🎯 To (destination)",
+                placeholder="e.g., Gare du Nord, Paris",
+                help="Enter your destination address"
+            )
+        
+        # Plan route button
+        plan_button = st.button("🔍 Plan My Route", type="primary", use_container_width=True)
+        
+        if plan_button:
+            if not start_address or not dest_address:
+                st.warning("⚠️ Please enter both start and destination addresses")
+            elif start_address.lower() == dest_address.lower():
+                st.error("❌ Start and destination are the same. Please enter different addresses.")
+            else:
+                # Show progress
+                with st.spinner("🗺️ Planning your journey..."):
+                    try:
+                        # Step 1: Geocode addresses
+                        st.info("📍 Finding locations...")
+                        start_lat, start_lon = geocode_address(start_address)
+                        dest_lat, dest_lon = geocode_address(dest_address)
+                        
+                        if not start_lat or not dest_lat:
+                            if not start_lat:
+                                st.error(f"❌ Could not find location: '{start_address}'")
+                            if not dest_lat:
+                                st.error(f"❌ Could not find location: '{dest_address}'")
+                            st.info("💡 Try being more specific (add 'Paris' or postal code)")
+                        else:
+                            st.success(f"✅ Locations found!")
+                            
+                            # Step 2: Plan route
+                            st.info("🚴 Finding best stations and calculating route...")
+                            route = plan_route(start_lat, start_lon, dest_lat, dest_lon, df)
+                            
+                            start_station = route['start_station']
+                            end_station = route['end_station']
+                            
+                            # Check if same station
+                            if start_station['stationcode'] == end_station['stationcode']:
+                                st.warning("⚠️ Start and destination are very close - same station recommended!")
+                                st.info(f"🚴 Station: **{start_station['name']}**")
+                            else:
+                                # Step 3: Get predictions
+                                st.info("🔮 Getting availability predictions (this may take 10-20 seconds)...")
+                                
+                                try:
+                                    start_pred = get_prediction_at_time(
+                                        start_station['stationcode'],
+                                        route['arrival_at_start_min'],
+                                        API_BASE
+                                    )
+                                    
+                                    end_pred = get_prediction_at_time(
+                                        end_station['stationcode'],
+                                        route['arrival_at_end_min'],
+                                        API_BASE
+                                    )
+                                    
+                                    # Step 4: Get verdict
+                                    verdict = get_journey_verdict(
+                                        start_pred['bikes_predicted'],
+                                        end_pred['docks_predicted']
+                                    )
+                                    
+                                    st.success("✅ Route planned successfully!")
+                                    
+                                except requests.exceptions.Timeout:
+                                    st.error("⏱️ **Timeout**: Prediction service is taking too long (>40s)")
+                                    st.warning("⚠️ **Route information** (without predictions):")
+                                    # Show route info without predictions
+                                    st.markdown("---")
+                                    st.markdown("## 📊 Your Journey (Route Only)")
+                                    
+                                    # Time breakdown
+                                    st.markdown("### ⏱️ Journey Breakdown")
+                                    col1, col2, col3, col4 = st.columns(4)
+                                    with col1:
+                                        st.metric("🚶 Walk to Start", f"{route['walk_to_start_min']:.0f} min", f"{route['walk_to_start_km']:.2f} km")
+                                    with col2:
+                                        st.metric("🚴 Bike Ride", f"{route['bike_time_min']:.0f} min", f"{route['bike_distance_km']:.2f} km")
+                                    with col3:
+                                        st.metric("🚶 Walk to Dest", f"{route['walk_from_end_min']:.0f} min", f"{route['walk_from_end_km']:.2f} km")
+                                    with col4:
+                                        st.metric("⏱️ Total Time", f"{route['total_time_min']:.0f} min")
+                                    
+                                    # Station details (without predictions)
+                                    st.markdown("### 🚲 Start Station")
+                                    st.markdown(f"**{start_station['name']}**")
+                                    st.caption(f"📍 {route['walk_to_start_km']*1000:.0f}m from your location ({route['walk_to_start_min']:.0f} min walk)")
+                                    
+                                    st.markdown("### 🅿️ End Station")
+                                    st.markdown(f"**{end_station['name']}**")
+                                    st.caption(f"📍 {route['walk_from_end_km']*1000:.0f}m from destination ({route['walk_from_end_min']:.0f} min walk)")
+                                    
+                                    st.info("💡 **Tip**: Check current availability manually in the 'Explore Map' tab before starting your journey")
+                                    
+                                    # Skip to map display (will be added below)
+                                    verdict = None
+                                    start_pred = None
+                                    end_pred = None
+                                    
+                                except requests.exceptions.RequestException as e:
+                                    st.error(f"❌ **Connection error**: {str(e)}")
+                                    st.info("💡 Make sure FastAPI is running on http://127.0.0.1:8000")
+                                    verdict = None
+                                    start_pred = None
+                                    end_pred = None
+                                
+                                # Display results (only if predictions succeeded)
+                                if verdict is not None:
+                                    st.markdown("---")
+                                    st.markdown("## 📊 Your Journey")
+                                    
+                                    # Verdict banner
+                                    if verdict['status'] == 'success':
+                                        st.success(f"### {verdict['icon']} {verdict['verdict']}")
+                                    elif verdict['status'] == 'warning':
+                                        st.warning(f"### {verdict['icon']} {verdict['verdict']}")
+                                    else:
+                                        st.error(f"### {verdict['icon']} {verdict['verdict']}")
+                                    
+                                    st.markdown(verdict['details'])
+                                    
+                                    # Time breakdown
+                                    st.markdown("### ⏱️ Journey Breakdown")
+                                    col1, col2, col3, col4 = st.columns(4)
+                                    with col1:
+                                        st.metric("🚶 Walk to Start", f"{route['walk_to_start_min']:.0f} min", f"{route['walk_to_start_km']:.2f} km")
+                                    with col2:
+                                        st.metric("🚴 Bike Ride", f"{route['bike_time_min']:.0f} min", f"{route['bike_distance_km']:.2f} km")
+                                    with col3:
+                                        st.metric("🚶 Walk to Dest", f"{route['walk_from_end_min']:.0f} min", f"{route['walk_from_end_km']:.2f} km")
+                                    with col4:
+                                        st.metric("⏱️ Total Time", f"{route['total_time_min']:.0f} min")
+                                    
+                                    # Station details
+                                    st.markdown("### 🚲 Start Station")
+                                    col1, col2 = st.columns([2, 1])
+                                    with col1:
+                                        st.markdown(f"**{start_station['name']}**")
+                                        st.caption(f"📍 {route['walk_to_start_km']*1000:.0f}m from your location ({route['walk_to_start_min']:.0f} min walk)")
+                                    with col2:
+                                        confidence_emoji = "🟢" if start_pred['confidence'] == 'high' else "🟡" if start_pred['confidence'] == 'medium' else "🟠"
+                                        st.metric(
+                                            f"🔮 In {route['arrival_at_start_min']:.0f} min",
+                                            f"~{start_pred['bikes_predicted']:.0f} bikes",
+                                            f"{confidence_emoji} {start_pred['confidence']} confidence"
+                                        )
+                                    
+                                    st.markdown("### 🅿️ End Station")
+                                    col1, col2 = st.columns([2, 1])
+                                    with col1:
+                                        st.markdown(f"**{end_station['name']}**")
+                                        st.caption(f"📍 {route['walk_from_end_km']*1000:.0f}m from destination ({route['walk_from_end_min']:.0f} min walk)")
+                                    with col2:
+                                        confidence_emoji = "🟢" if end_pred['confidence'] == 'high' else "🟡" if end_pred['confidence'] == 'medium' else "🟠"
+                                        st.metric(
+                                            f"🔮 In {route['arrival_at_end_min']:.0f} min",
+                                            f"~{end_pred['docks_predicted']:.0f} docks",
+                                            f"{confidence_emoji} {end_pred['confidence']} confidence"
+                                        )
+                                
+                                # Map visualization (show regardless of prediction success)
+                                st.markdown("### 🗺️ Route Map")
+                                
+                                # Create map data
+                                map_data = pd.DataFrame({
+                                    'lat': [start_lat, start_station['lat'], end_station['lat'], dest_lat],
+                                    'lon': [start_lon, start_station['lon'], end_station['lon'], dest_lon],
+                                    'type': ['start', 'start_station', 'end_station', 'destination'],
+                                    'name': ['Your location', start_station['name'], end_station['name'], 'Destination']
+                                })
+                                
+                                # Color mapping
+                                color_map = {
+                                    'start': [255, 0, 0, 160],  # Red
+                                    'start_station': [0, 255, 0, 200],  # Green
+                                    'end_station': [0, 0, 255, 200],  # Blue
+                                    'destination': [255, 0, 0, 160]  # Red
+                                }
+                                map_data['color'] = map_data['type'].map(color_map)
+                                
+                                # Create pydeck map
+                                view_state = pdk.ViewState(
+                                    latitude=(start_lat + dest_lat) / 2,
+                                    longitude=(start_lon + dest_lon) / 2,
+                                    zoom=13,
+                                    pitch=0
+                                )
+                                
+                                layer = pdk.Layer(
+                                    'ScatterplotLayer',
+                                    data=map_data,
+                                    get_position='[lon, lat]',
+                                    get_color='color',
+                                    get_radius=100,
+                                    pickable=True
+                                )
+                                
+                                tooltip = {
+                                    "html": "<b>{name}</b><br/>{type}",
+                                    "style": {"backgroundColor": "steelblue", "color": "white"}
+                                }
+                                
+                                deck = pdk.Deck(
+                                    layers=[layer],
+                                    initial_view_state=view_state,
+                                    tooltip=tooltip,
+                                    map_style='mapbox://styles/mapbox/light-v10'
+                                )
+                                
+                                st.pydeck_chart(deck)
+                                
+                                # Legend
+                                st.markdown("**Legend:** 🔴 You/Destination · 🟢 Start Station · 🔵 End Station")
+                    
+                    except Exception as e:
+                        import traceback
+                        st.error(f"❌ Error planning journey: {str(e)}")
+                        st.code(traceback.format_exc())
+                        st.info("💡 Make sure FastAPI is running and try again")
+
 
 except Exception as e:
     st.error(f"❌ Error loading data: {e}")
