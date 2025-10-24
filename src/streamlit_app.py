@@ -1,4 +1,4 @@
-import os
+﻿import os
 import time
 import requests
 import pandas as pd
@@ -11,33 +11,34 @@ from zoneinfo import ZoneInfo
 
 API_BASE = os.environ.get("VELIB_API_BASE", "http://127.0.0.1:8000")
 
-st.set_page_config(page_title="Velib Trend — Stations", layout="wide")
-st.title("Velib Trend — Live Stations")
+st.set_page_config(page_title="Velib Trend — Paris Bike Predictions", layout="wide")
+st.title("🚴 Velib Trend")
+st.caption("Real-time availability & AI-powered predictions for Paris bike stations")
 
+# Sidebar with minimal controls
 with st.sidebar:
-    st.markdown("### Options")
-    validate = st.checkbox("Validate & coerce types", value=True)
-    refresh = st.button("Refresh data")
-
-    st.markdown("### Mode")
+    st.markdown("### 🔍 Mode")
     if "mode" not in st.session_state:
         st.session_state.mode = "bike"
-    mcol1, mcol2 = st.columns(2)
-    rerun_needed = False
-    if mcol1.button("Find a bike", type="primary" if st.session_state.mode == "bike" else "secondary"):
-        if st.session_state.mode != "bike":
-            st.session_state.mode = "bike"
-            rerun_needed = True
-    if mcol2.button("Find a dock", type="primary" if st.session_state.mode == "dock" else "secondary"):
-        if st.session_state.mode != "dock":
-            st.session_state.mode = "dock"
-            rerun_needed = True
-    if rerun_needed:
-        try:
-            st.rerun()
-        except AttributeError:  # fallback for older Streamlit
-            st.experimental_rerun()
-    mode = st.session_state.mode
+    mode = st.radio(
+        "What are you looking for?",
+        ["bike", "dock"],
+        format_func=lambda x: "🚴 Find a bike" if x == "bike" else "🅿️ Find a dock",
+        key="mode_selector"
+    )
+    st.session_state.mode = mode
+    
+    st.markdown("---")
+    
+    # Collapsible advanced options
+    with st.expander("⚙️ Advanced Options"):
+        validate = st.checkbox("Validate data types", value=True)
+        refresh = st.button("🔄 Refresh data")
+    
+    st.markdown("---")
+    st.markdown("### 📊 About")
+    st.caption("ML predictions powered by LSTM neural network")
+    st.caption("Data updates hourly via AWS Lambda")
 
 @st.cache_data(ttl=60)
 def load_data(validate: bool) -> pd.DataFrame:
@@ -72,12 +73,9 @@ def load_data(validate: bool) -> pd.DataFrame:
 if refresh:
     load_data.clear()
 
-status = st.empty()
-start = time.time()
+# Load data silently (no status message unless error)
 try:
     df = load_data(validate=validate)
-    elapsed = time.time() - start
-    status.success(f"Loaded {len(df)} stations (all) in {elapsed:.2f}s from {API_BASE}")
 
     # Simple color-coded circles (fixed radius) by availability percentage (bike or dock mode)
     if not df.empty:
@@ -119,9 +117,53 @@ try:
         df["lat"] = pd.to_numeric(df.get("lat"), errors="coerce")
         df["lon"] = pd.to_numeric(df.get("lon"), errors="coerce")
         map_df = df.dropna(subset=["lat", "lon"]).copy()
+        
+        # ============================================================
+        # SEARCH BAR AT THE TOP (PROMINENT)
+        # ============================================================
+        st.markdown("---")
+        st.markdown("## 🔍 Find a Station")
+        
+        # Create searchable options with station name and code
+        station_options = {}
+        station_lookup = {}  # Map display_text -> station data
+        for _, row in map_df.iterrows():
+            station_name = row.get('name', 'Unknown')
+            station_code = str(row.get('stationcode', ''))
+            # Format: "Station Name (Code)"
+            display_text = f"{station_name} ({station_code})"
+            station_options[display_text] = station_code
+            station_lookup[display_text] = row
+        
+        # Sort by station name
+        sorted_options = [""] + sorted(station_options.keys())
+        
+        selected_station = st.selectbox(
+            "Search by station name",
+            options=sorted_options,
+            help="Start typing a station name (e.g., 'République', 'Bastille', 'Louvre')",
+            placeholder="Type to search...",
+            label_visibility="collapsed"
+        )
+        
+        # Get the station code from selection
+        station_code_input = station_options.get(selected_station, "") if selected_station else ""
+        
+        # ============================================================
+        # MAP WITH ZOOM TO SELECTED STATION
+        # ============================================================
         if not map_df.empty:
-            center_lat = float(np.nanmean(map_df["lat"]))
-            center_lon = float(np.nanmean(map_df["lon"]))
+            # If a station is selected, zoom to it
+            if station_code_input and selected_station in station_lookup:
+                selected_row = station_lookup[selected_station]
+                center_lat = float(selected_row["lat"])
+                center_lon = float(selected_row["lon"])
+                zoom_level = 15  # Zoomed in
+            else:
+                # Default: show all Paris
+                center_lat = float(np.nanmean(map_df["lat"]))
+                center_lon = float(np.nanmean(map_df["lon"]))
+                zoom_level = 11  # Zoomed out
 
             layer = pdk.Layer(
                 "ScatterplotLayer",
@@ -141,56 +183,90 @@ try:
                 "html": "<b>{name}</b><br/>Station: {stationcode}<br/>Bikes: {numbikesavailable}<br/>Docks: {numdocksavailable}",
                 "style": {"backgroundColor": "#1E1E1E", "color": "white"},
             }
-            view_state = pdk.ViewState(latitude=center_lat, longitude=center_lon, zoom=11)
+            view_state = pdk.ViewState(latitude=center_lat, longitude=center_lon, zoom=zoom_level)
             deck = pdk.Deck(layers=[layer], initial_view_state=view_state, tooltip=tooltip, map_style="light")
+            
+            # Display the map
             st.pydeck_chart(deck, use_container_width=True)
             
-            # Station selection for predictions
-            st.markdown("---")
-            st.markdown("### 🔮 Historique & Prédictions")
-            st.markdown("💡 **Astuce**: Survolez les stations sur la carte pour voir leur code, puis entrez-le ci-dessous")
+            # Collapsible legend and stats
+            with st.expander("ℹ️ Map Legend & Statistics"):
+                col_legend, col_stats = st.columns([1, 2])
+                with col_legend:
+                    st.markdown("#### Color Code")
+                    if mode == "bike":
+                        st.markdown("""
+<div style='line-height:1.4'>
+<span style='display:inline-block;width:12px;height:12px;background:#46A03C;border-radius:50%;margin-right:6px;'></span> ≥ 60% bikes<br>
+<span style='display:inline-block;width:12px;height:12px;background:#FDB446;border-radius:50%;margin-right:6px;'></span> 30–59% bikes<br>
+<span style='display:inline-block;width:12px;height:12px;background:#E63946;border-radius:50%;margin-right:6px;'></span> < 30% bikes<br>
+<span style='display:inline-block;width:12px;height:12px;background:#000;border-radius:50%;margin-right:6px;'></span> Unknown
+</div>
+""", unsafe_allow_html=True)
+                    else:
+                        st.markdown("""
+<div style='line-height:1.4'>
+<span style='display:inline-block;width:12px;height:12px;background:#46A03C;border-radius:50%;margin-right:6px;'></span> ≥ 60% docks free<br>
+<span style='display:inline-block;width:12px;height:12px;background:#FDB446;border-radius:50%;margin-right:6px;'></span> 30–59% docks free<br>
+<span style='display:inline-block;width:12px;height:12px;background:#E63946;border-radius:50%;margin-right:6px;'></span> < 30% docks free<br>
+<span style='display:inline-block;width:12px;height:12px;background:#000;border-radius:50%;margin-right:6px;'></span> Unknown
+</div>
+""", unsafe_allow_html=True)
+                
+                with col_stats:
+                    st.markdown("#### Network Statistics")
+                    avg_bikes = map_df["numbikesavailable"].fillna(0).mean()
+                    avg_docks = map_df["numdocksavailable"].fillna(0).mean()
+                    total_capacity = map_df["capacity"].fillna(0).sum()
+                    if total_capacity > 0:
+                        fleet_util = (map_df["numbikesavailable"].fillna(0).sum() / total_capacity) * 100
+                    else:
+                        fleet_util = 0.0
+                    
+                    col_s1, col_s2, col_s3 = st.columns(3)
+                    with col_s1:
+                        st.metric("Stations", f"{len(map_df)}")
+                    with col_s2:
+                        st.metric("Fleet Usage", f"{fleet_util:.1f}%")
+                    with col_s3:
+                        st.metric("Avg Bikes/Station", f"{avg_bikes:.1f}")
             
-            col_input, col_button = st.columns([3, 1])
-            with col_input:
-                station_code_input = st.text_input(
-                    "Code de la station",
-                    placeholder="Ex: 16107",
-                    help="Survolez une station sur la carte pour voir son code"
-                )
-            with col_button:
-                st.markdown("<br>", unsafe_allow_html=True)  # Align button
-                predict_button = st.button("📊 Voir l'historique + prédictions", type="primary")
-            
-            if predict_button and station_code_input:
+            # ============================================================
+            # STATION DETAILS & PREDICTIONS
+            # ============================================================
+            if station_code_input:
+                st.markdown("---")
+                st.markdown("## 📊 Station Details & Predictions")
+                
                 # Find station in dataframe
                 station_data = map_df[map_df['stationcode'].astype(str) == str(station_code_input)]
                 
                 if station_data.empty:
-                    st.error(f"❌ Station {station_code_input} introuvable")
+                    st.error(f"❌ Station {station_code_input} not found")
                 else:
-                    selected_station = station_data.iloc[0]
-                    station_code = str(selected_station['stationcode'])
-                    station_name = selected_station['name']
-                    current_bikes = selected_station['numbikesavailable']
-                    current_docks = selected_station['numdocksavailable']
-                    capacity = selected_station['capacity']
+                    selected_station_row = station_data.iloc[0]
+                    station_code = str(selected_station_row['stationcode'])
+                    station_name = selected_station_row['name']
+                    current_bikes = selected_station_row['numbikesavailable']
+                    current_docks = selected_station_row['numdocksavailable']
+                    capacity = selected_station_row['capacity']
                     
-                    # Display station header
-                    st.markdown(f"#### 🚲 **{station_name}**")
-                    st.caption(f"Code: {station_code} • Capacité: {capacity} places")
+                    # Display station header (cleaner)
+                    st.markdown(f"### 🚲 {station_name}")
+                    st.caption(f"Station Code: {station_code} • Capacity: {int(capacity)} spaces")
                     
                     # Current status
                     col1, col2, col3 = st.columns(3)
                     with col1:
-                        st.metric("🚴 Vélos actuels", int(current_bikes))
+                        st.metric("🚴 Available Bikes", int(current_bikes))
                     with col2:
-                        st.metric("🅿️ Places libres", int(current_docks))
+                        st.metric("🅿️ Free Docks", int(current_docks))
                     with col3:
                         occupancy = (current_bikes / capacity * 100) if capacity > 0 else 0
-                        st.metric("📊 Taux d'occupation", f"{occupancy:.0f}%")
+                        st.metric("📊 Occupancy", f"{occupancy:.0f}%")
                     
                     # Fetch historical data + predictions
-                    with st.spinner("⏳ Loading historical data and predictions... (5-10 seconds)"):
+                    with st.spinner("⏳ Loading predictions... (5-10 seconds)"):
                         try:
                             pred_url = f"{API_BASE}/predict/{station_code}"
                             pred_response = requests.get(pred_url, timeout=30)
@@ -227,15 +303,15 @@ try:
                                         # Skip invalid data points
                                         continue
                                 
-                                # Add historical trace
+                                # Add historical trace with smooth curve
                                 if hist_times and all(isinstance(t, datetime) for t in hist_times):
                                     fig.add_trace(go.Scatter(
                                         x=hist_times,
                                         y=hist_bikes,
                                         mode='lines+markers',
                                         name='Historical (24h)',
-                                        line=dict(color='#1f77b4', width=2),
-                                        marker=dict(size=6),
+                                        line=dict(color='#1f77b4', width=2.5, shape='spline'),
+                                        marker=dict(size=5, color='#1f77b4'),
                                         hovertemplate='<b>%{x|%H:%M}</b><br>Bikes: %{y}<extra></extra>'
                                     ))
                                 elif hist_times:
@@ -265,13 +341,52 @@ try:
                                                 continue
                                     
                                     if pred_times and all(isinstance(t, datetime) for t in pred_times):
+                                        # Add smooth connection line from last historical point to first prediction
+                                        if hist_times and hist_bikes:
+                                            # Create smooth connecting segment with intermediate points
+                                            from datetime import timedelta
+                                            
+                                            start_time = hist_times[-1]
+                                            end_time = pred_times[0]
+                                            start_bikes = hist_bikes[-1]
+                                            end_bikes = pred_bikes[0]
+                                            
+                                            # Create intermediate points for smooth curve
+                                            time_diff = (end_time - start_time).total_seconds()
+                                            num_points = 5  # More points = smoother curve
+                                            
+                                            connect_times = [start_time]
+                                            connect_bikes = [start_bikes]
+                                            
+                                            for i in range(1, num_points):
+                                                ratio = i / num_points
+                                                intermediate_time = start_time + timedelta(seconds=time_diff * ratio)
+                                                # Linear interpolation for bikes
+                                                intermediate_bikes = start_bikes + (end_bikes - start_bikes) * ratio
+                                                connect_times.append(intermediate_time)
+                                                connect_bikes.append(intermediate_bikes)
+                                            
+                                            connect_times.append(end_time)
+                                            connect_bikes.append(end_bikes)
+                                            
+                                            fig.add_trace(go.Scatter(
+                                                x=connect_times,
+                                                y=connect_bikes,
+                                                mode='lines',
+                                                name='Connection',
+                                                line=dict(color='#999999', width=2, dash='dot', shape='spline'),
+                                                showlegend=False,
+                                                hoverinfo='skip'
+                                            ))
+                                        
+                                        # Add predictions trace with smooth curve
                                         fig.add_trace(go.Scatter(
                                             x=pred_times,
                                             y=pred_bikes,
                                             mode='lines+markers',
-                                            name='Predictions',
-                                            line=dict(color='#ff7f0e', width=3, dash='dash'),
-                                            marker=dict(size=10, symbol='diamond'),
+                                            name='AI Predictions',
+                                            line=dict(color='#ff7f0e', width=3, shape='spline'),
+                                            marker=dict(size=10, symbol='diamond', color='#ff7f0e'),
                                             hovertemplate='<b>%{x|%H:%M}</b><br>Predicted: %{y} bikes<extra></extra>'
                                         ))
                                     elif pred_times:
@@ -293,22 +408,34 @@ try:
                                         # Silently skip vline - graph works without it
                                         pass
                                 
-                                # Update layout
+                                # Update layout with better styling
                                 fig.update_layout(
-                                    title=f"📈 Availability: {station_name}",
-                                    xaxis_title="Time (Paris)",
-                                    yaxis_title="Number of available bikes",
+                                    title={
+                                        'text': f"📈 24-Hour History & AI Predictions",
+                                        'x': 0.5,
+                                        'xanchor': 'center'
+                                    },
+                                    xaxis_title="Time (Paris local time)",
+                                    yaxis_title="Available bikes",
                                     hovermode='x unified',
                                     showlegend=True,
-                                    height=500,
-                                    template="plotly_white"
+                                    legend=dict(
+                                        orientation="h",
+                                        yanchor="bottom",
+                                        y=1.02,
+                                        xanchor="right",
+                                        x=1
+                                    ),
+                                    height=450,
+                                    template="plotly_white",
+                                    margin=dict(l=50, r=50, t=80, b=50)
                                 )
                                 
                                 st.plotly_chart(fig, use_container_width=True)
                                 
                                 # Show prediction details below chart
                                 if predictions_dict:
-                                    st.markdown("### 🎯 Prediction Details")
+                                    st.markdown("#### 🎯 Predictions")
                                     col1, col2, col3 = st.columns(3)
                                     
                                     for i, (col, key) in enumerate(zip([col1, col2, col3], ['T+1h', 'T+2h', 'T+3h'])):
@@ -359,23 +486,25 @@ try:
                                                     st.write(f"Debug - pred dict: {pred}")
                                                     st.write(f"Debug - current_bikes: {current_bikes} (type: {type(current_bikes)})")
                             
-                            # Show metadata
-                            st.markdown("---")
-                            model_info = pred_data.get("model", {})
-                            metadata = pred_data.get("metadata", {})
-                            is_simulated = metadata.get("simulated_history", False)
-                            
-                            col1, col2, col3 = st.columns(3)
-                            with col1:
-                                st.caption(f"🤖 Model: {model_info.get('version', 'unknown')}")
-                            with col2:
-                                st.caption(f"⚡ Inference time: {model_info.get('inference_time_ms', 0):.0f}ms")
-                            with col3:
+                            # Show metadata in collapsible section
+                            with st.expander("🔧 Technical Details"):
+                                model_info = pred_data.get("model", {})
+                                metadata = pred_data.get("metadata", {})
+                                is_simulated = metadata.get("simulated_history", False)
+                                
+                                col1, col2, col3 = st.columns(3)
+                                with col1:
+                                    st.caption(f"🤖 Model: {model_info.get('version', 'unknown')}")
+                                with col2:
+                                    st.caption(f"⚡ Inference: {model_info.get('inference_time_ms', 0):.0f}ms")
+                                with col3:
+                                    if is_simulated:
+                                        st.caption("📊 Data: Simulated")
+                                    else:
+                                        st.caption("✅ Data: Real S3")
+                                
                                 if is_simulated:
-                                    st.caption("📊 Simulated data")
-                                    st.warning("⚠️ Simulated history (S3 unavailable)")
-                                else:
-                                    st.caption("✅ Real S3 data")
+                                    st.info("ℹ️ Using simulated historical data (S3 temporarily unavailable)")
                         
                         except requests.exceptions.Timeout:
                             st.error("⏱️ **Timeout**: Server taking too long to respond (>30s)")
@@ -388,39 +517,6 @@ try:
                             st.error(f"❌ **Error**: {str(e)}")
                             st.code(traceback.format_exc())
 
-            # Legend + quick stats
-            avg_bikes = map_df["numbikesavailable"].fillna(0).mean()
-            avg_docks = map_df["numdocksavailable"].fillna(0).mean()
-            total_capacity = map_df["capacity"].fillna(0).sum()
-            if total_capacity > 0:
-                fleet_util = (map_df["numbikesavailable"].fillna(0).sum() / total_capacity) * 100
-            else:
-                fleet_util = 0.0
-
-            col_a, col_b = st.columns([1,2])
-            with col_a:
-                st.markdown("#### Légende")
-                if mode == "bike":
-                    st.markdown("""
-<div style='line-height:1.2'>
-<span style='display:inline-block;width:14px;height:14px;background:#46A03C;border-radius:50%;margin-right:6px;'></span> ≥ 60% vélos<br>
-<span style='display:inline-block;width:14px;height:14px;background:#FDB446;border-radius:50%;margin-right:6px;'></span> 30–59% vélos<br>
-<span style='display:inline-block;width:14px;height:14px;background:#E63946;border-radius:50%;margin-right:6px;'></span> < 30% vélos<br>
-<span style='display:inline-block;width:14px;height:14px;background:#000;border-radius:50%;margin-right:6px;'></span> capacité inconnue
-</div>
-""", unsafe_allow_html=True)
-                else:
-                    st.markdown("""
-<div style='line-height:1.2'>
-<span style='display:inline-block;width:14px;height:14px;background:#46A03C;border-radius:50%;margin-right:6px;'></span> ≥ 60% docks libres<br>
-<span style='display:inline-block;width:14px;height:14px;background:#FDB446;border-radius:50%;margin-right:6px;'></span> 30–59% docks libres<br>
-<span style='display:inline-block;width:14px;height:14px;background:#E63946;border-radius:50%;margin-right:6px;'></span> < 30% docks libres<br>
-<span style='display:inline-block;width:14px;height:14px;background:#000;border-radius:50%;margin-right:6px;'></span> capacité inconnue
-</div>
-""", unsafe_allow_html=True)
-            with col_b:
-                st.markdown("#### Stats rapides")
-                st.markdown(f"Stations: **{len(map_df)}**  | Utilisation flotte: **{fleet_util:.1f}%**  | Moy. vélos/station: **{avg_bikes:.1f}**  | Moy. docks/station: **{avg_docks:.1f}**")
-
 except Exception as e:
-    status.error(f"Error loading data: {e}")
+    st.error(f"❌ Error loading data: {e}")
+    st.info("💡 Make sure FastAPI is running on http://127.0.0.1:8000")
