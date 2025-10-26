@@ -68,6 +68,12 @@ def load_data(validate: bool) -> pd.DataFrame:
     payload = r.json()
     records = payload.get("records", [])
     df = pd.DataFrame(records)
+    
+    # Filter out closed/uninstalled stations
+    # Keep only stations where is_installed is "OUI", True, etc.
+    if "is_installed" in df.columns:
+        df = df[df["is_installed"].isin(["OUI", True, "true", 1])].copy()
+    
     preferred = [
         "stationcode",
         "name",
@@ -677,114 +683,114 @@ try:
                                     verdict = None
                                     start_pred = None
                                     end_pred = None
-                            
-                            # Display results (only if predictions succeeded)
-                            if verdict is not None:
-                                st.markdown("---")
-                                st.markdown("## 📊 Your Journey")
                                 
-                                # Verdict banner
-                                if verdict['status'] == 'success':
-                                    st.success(f"### {verdict['icon']} {verdict['verdict']}")
-                                elif verdict['status'] == 'warning':
-                                    st.warning(f"### {verdict['icon']} {verdict['verdict']}")
-                                else:
-                                    st.error(f"### {verdict['icon']} {verdict['verdict']}")
+                                # Display results (only if predictions succeeded)
+                                if verdict is not None:
+                                    st.markdown("---")
+                                    st.markdown("## 📊 Your Journey")
+                                    
+                                    # Verdict banner
+                                    if verdict['status'] == 'success':
+                                        st.success(f"### {verdict['icon']} {verdict['verdict']}")
+                                    elif verdict['status'] == 'warning':
+                                        st.warning(f"### {verdict['icon']} {verdict['verdict']}")
+                                    else:
+                                        st.error(f"### {verdict['icon']} {verdict['verdict']}")
+                                    
+                                    st.markdown(verdict['details'])
+                                    
+                                    # Time breakdown
+                                    st.markdown("### ⏱️ Journey Breakdown")
+                                    col1, col2, col3, col4 = st.columns(4)
+                                    with col1:
+                                        st.metric("🚶 Walk to Start", f"{route['walk_to_start_min']:.0f} min", f"{route['walk_to_start_km']:.2f} km")
+                                    with col2:
+                                        st.metric("🚴 Bike Ride", f"{route['bike_time_min']:.0f} min", f"{route['bike_distance_km']:.2f} km")
+                                    with col3:
+                                        st.metric("🚶 Walk to Dest", f"{route['walk_from_end_min']:.0f} min", f"{route['walk_from_end_km']:.2f} km")
+                                    with col4:
+                                        st.metric("⏱️ Total Time", f"{route['total_time_min']:.0f} min")
+                                    
+                                    # Station details
+                                    st.markdown("### 🚲 Start Station")
+                                    col1, col2 = st.columns([2, 1])
+                                    with col1:
+                                        st.markdown(f"**{start_station['name']}**")
+                                        st.caption(f"📍 {route['walk_to_start_km']*1000:.0f}m from your location ({route['walk_to_start_min']:.0f} min walk)")
+                                    with col2:
+                                        confidence_emoji = "🟢" if start_pred['confidence'] == 'high' else "🟡" if start_pred['confidence'] == 'medium' else "🟠"
+                                        st.metric(
+                                            f"🔮 In {route['arrival_at_start_min']:.0f} min",
+                                            f"~{start_pred['bikes_predicted']:.0f} bikes",
+                                            f"{confidence_emoji} {start_pred['confidence']} confidence"
+                                        )
+                                    
+                                    st.markdown("### 🅿️ End Station")
+                                    col1, col2 = st.columns([2, 1])
+                                    with col1:
+                                        st.markdown(f"**{end_station['name']}**")
+                                        st.caption(f"📍 {route['walk_from_end_km']*1000:.0f}m from destination ({route['walk_from_end_min']:.0f} min walk)")
+                                    with col2:
+                                        confidence_emoji = "🟢" if end_pred['confidence'] == 'high' else "🟡" if end_pred['confidence'] == 'medium' else "🟠"
+                                        st.metric(
+                                            f"🔮 In {route['arrival_at_end_min']:.0f} min",
+                                            f"~{end_pred['docks_predicted']:.0f} docks",
+                                            f"{confidence_emoji} {end_pred['confidence']} confidence"
+                                        )
                                 
-                                st.markdown(verdict['details'])
+                                # Map visualization (show regardless of prediction success)
+                                st.markdown("### 🗺️ Route Map")
                                 
-                                # Time breakdown
-                                st.markdown("### ⏱️ Journey Breakdown")
-                                col1, col2, col3, col4 = st.columns(4)
-                                with col1:
-                                    st.metric("🚶 Walk to Start", f"{route['walk_to_start_min']:.0f} min", f"{route['walk_to_start_km']:.2f} km")
-                                with col2:
-                                    st.metric("🚴 Bike Ride", f"{route['bike_time_min']:.0f} min", f"{route['bike_distance_km']:.2f} km")
-                                with col3:
-                                    st.metric("🚶 Walk to Dest", f"{route['walk_from_end_min']:.0f} min", f"{route['walk_from_end_km']:.2f} km")
-                                with col4:
-                                    st.metric("⏱️ Total Time", f"{route['total_time_min']:.0f} min")
+                                # Create map data
+                                map_data = pd.DataFrame({
+                                    'lat': [start_lat, start_station['lat'], end_station['lat'], dest_lat],
+                                    'lon': [start_lon, start_station['lon'], end_station['lon'], dest_lon],
+                                    'type': ['start', 'start_station', 'end_station', 'destination'],
+                                    'name': ['Your location', start_station['name'], end_station['name'], 'Destination']
+                                })
                                 
-                                # Station details
-                                st.markdown("### 🚲 Start Station")
-                                col1, col2 = st.columns([2, 1])
-                                with col1:
-                                    st.markdown(f"**{start_station['name']}**")
-                                    st.caption(f"📍 {route['walk_to_start_km']*1000:.0f}m from your location ({route['walk_to_start_min']:.0f} min walk)")
-                                with col2:
-                                    confidence_emoji = "🟢" if start_pred['confidence'] == 'high' else "🟡" if start_pred['confidence'] == 'medium' else "🟠"
-                                    st.metric(
-                                        f"🔮 In {route['arrival_at_start_min']:.0f} min",
-                                        f"~{start_pred['bikes_predicted']:.0f} bikes",
-                                        f"{confidence_emoji} {start_pred['confidence']} confidence"
-                                    )
+                                # Color mapping
+                                color_map = {
+                                    'start': [255, 0, 0, 160],  # Red
+                                    'start_station': [0, 255, 0, 200],  # Green
+                                    'end_station': [0, 0, 255, 200],  # Blue
+                                    'destination': [255, 0, 0, 160]  # Red
+                                }
+                                map_data['color'] = map_data['type'].map(color_map)
                                 
-                                st.markdown("### 🅿️ End Station")
-                                col1, col2 = st.columns([2, 1])
-                                with col1:
-                                    st.markdown(f"**{end_station['name']}**")
-                                    st.caption(f"📍 {route['walk_from_end_km']*1000:.0f}m from destination ({route['walk_from_end_min']:.0f} min walk)")
-                                with col2:
-                                    confidence_emoji = "🟢" if end_pred['confidence'] == 'high' else "🟡" if end_pred['confidence'] == 'medium' else "🟠"
-                                    st.metric(
-                                        f"🔮 In {route['arrival_at_end_min']:.0f} min",
-                                        f"~{end_pred['docks_predicted']:.0f} docks",
-                                        f"{confidence_emoji} {end_pred['confidence']} confidence"
-                                    )
-                            
-                            # Map visualization (show regardless of prediction success)
-                            st.markdown("### 🗺️ Route Map")
-                            
-                            # Create map data
-                            map_data = pd.DataFrame({
-                                'lat': [start_lat, start_station['lat'], end_station['lat'], dest_lat],
-                                'lon': [start_lon, start_station['lon'], end_station['lon'], dest_lon],
-                                'type': ['start', 'start_station', 'end_station', 'destination'],
-                                'name': ['Your location', start_station['name'], end_station['name'], 'Destination']
-                            })
-                            
-                            # Color mapping
-                            color_map = {
-                                'start': [255, 0, 0, 160],  # Red
-                                'start_station': [0, 255, 0, 200],  # Green
-                                'end_station': [0, 0, 255, 200],  # Blue
-                                'destination': [255, 0, 0, 160]  # Red
-                            }
-                            map_data['color'] = map_data['type'].map(color_map)
-                            
-                            # Create pydeck map
-                            view_state = pdk.ViewState(
-                                latitude=(start_lat + dest_lat) / 2,
-                                longitude=(start_lon + dest_lon) / 2,
-                                zoom=13,
-                                pitch=0
-                            )
-                            
-                            layer = pdk.Layer(
-                                'ScatterplotLayer',
-                                data=map_data,
-                                get_position='[lon, lat]',
-                                get_color='color',
-                                get_radius=100,
-                                pickable=True
-                            )
-                            
-                            tooltip = {
-                                "html": "<b>{name}</b><br/>{type}",
-                                "style": {"backgroundColor": "steelblue", "color": "white"}
-                            }
-                            
-                            deck = pdk.Deck(
-                                layers=[layer],
-                                initial_view_state=view_state,
-                                tooltip=tooltip,
-                                map_style='mapbox://styles/mapbox/light-v10'
-                            )
-                            
-                            st.pydeck_chart(deck)
-                            
-                            # Legend
-                            st.markdown("**Legend:** 🔴 You/Destination · 🟢 Start Station · 🔵 End Station")
+                                # Create pydeck map
+                                view_state = pdk.ViewState(
+                                    latitude=(start_lat + dest_lat) / 2,
+                                    longitude=(start_lon + dest_lon) / 2,
+                                    zoom=13,
+                                    pitch=0
+                                )
+                                
+                                layer = pdk.Layer(
+                                    'ScatterplotLayer',
+                                    data=map_data,
+                                    get_position='[lon, lat]',
+                                    get_color='color',
+                                    get_radius=100,
+                                    pickable=True
+                                )
+                                
+                                tooltip = {
+                                    "html": "<b>{name}</b><br/>{type}",
+                                    "style": {"backgroundColor": "steelblue", "color": "white"}
+                                }
+                                
+                                deck = pdk.Deck(
+                                    layers=[layer],
+                                    initial_view_state=view_state,
+                                    tooltip=tooltip,
+                                    map_style='mapbox://styles/mapbox/light-v10'
+                                )
+                                
+                                st.pydeck_chart(deck)
+                                
+                                # Legend
+                                st.markdown("**Legend:** 🔴 You/Destination · 🟢 Start Station · 🔵 End Station")
                 
                 except Exception as e:
                     import traceback

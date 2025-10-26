@@ -82,7 +82,7 @@ def get_cached_live_stations() -> List[Dict]:
     
     # Cache miss or expired - fetch fresh data
     raw = fetch_live_all()
-    data = normalize(raw)
+    data = normalize(raw)  # normalize() already filters out closed stations (capacity == 0)
     
     # Store in cache
     _live_stations_cache = (data, now)

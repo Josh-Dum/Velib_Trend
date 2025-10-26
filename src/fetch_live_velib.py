@@ -95,10 +95,19 @@ essential_fields = [
 
 
 def normalize(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Keep only essential fields and flatten coordinates."""
+    """Keep only essential fields and flatten coordinates.
+    
+    Also filters out closed stations (capacity == 0).
+    """
     out = []
     for rec in records:
         row = {k: rec.get(k) for k in essential_fields}
+        
+        # Filter out closed stations (capacity == 0)
+        capacity = row.get("capacity", 0)
+        if capacity == 0:
+            continue
+        
         coords = row.pop("coordonnees_geo", None)
         if isinstance(coords, dict):
             row["lat"] = coords.get("lat")

@@ -96,17 +96,21 @@ def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> fl
     return distance
 
 
-def find_nearest_station(lat: float, lon: float, stations_df: pd.DataFrame) -> Dict:
+def find_nearest_station(lat: float, lon: float, stations_df: pd.DataFrame) -> Optional[Dict]:
     """
     Find the closest Vélib station to given coordinates.
+    Note: stations_df should already be filtered for active stations (capacity > 0).
     
     Args:
         lat, lon: Target coordinates
         stations_df: DataFrame with all stations (must have 'lat', 'lon' columns)
     
     Returns:
-        Dictionary with station info + distance_km
+        Dictionary with station info + distance_km, or None if no station found
     """
+    if stations_df.empty:
+        return None
+    
     # Calculate distance to all stations
     stations_df = stations_df.copy()
     stations_df['distance_km'] = stations_df.apply(
@@ -143,9 +147,17 @@ def plan_route(start_lat: float, start_lon: float,
         - arrival_at_start_min: When user arrives at start station (from now)
         - arrival_at_end_min: When user arrives at end station (from now)
     """
-    # Find nearest stations
+    # Find nearest stations (already filtered for capacity > 0 at FastAPI level)
     start_station = find_nearest_station(start_lat, start_lon, stations_df)
     end_station = find_nearest_station(dest_lat, dest_lon, stations_df)
+    
+    # Check if stations were found
+    if start_station is None or end_station is None:
+        return {
+            "error": "No stations found nearby",
+            "start_station": start_station,
+            "end_station": end_station
+        }
     
     # Calculate distances
     walk_to_start_km = start_station['distance_km']
