@@ -11,6 +11,7 @@ import pandas as pd
 from math import radians, sin, cos, sqrt, atan2
 from typing import Tuple, Dict, Optional
 import time
+from functools import lru_cache
 
 
 # Constants
@@ -21,10 +22,14 @@ BIKE_THRESHOLD_MIN = 2   # >= 2 bikes = possible
 DOCK_THRESHOLD_SAFE = 4  # >= 4 docks = safe
 DOCK_THRESHOLD_MIN = 2   # >= 2 docks = possible
 
+# Geocoding cache (LRU cache for 128 most recent addresses)
+@lru_cache(maxsize=128)
+
 
 def geocode_address(address: str) -> Tuple[Optional[float], Optional[float]]:
     """
     Convert address to (latitude, longitude) using Nominatim.
+    Cached with LRU cache to avoid redundant API calls.
     
     Args:
         address: Address string (e.g., "24 Rue de Rivoli, Paris")
