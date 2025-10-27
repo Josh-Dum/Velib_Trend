@@ -899,6 +899,42 @@ try:
                                         <span style="font-size: 0.9rem;">{confidence_emoji} {end_pred['confidence'].title()} confidence</span>
                                     </div>
                                     """, unsafe_allow_html=True)
+                                
+                                # Google Maps integration button
+                                st.markdown("---")
+                                st.markdown("#### 🗺️ Navigate with Google Maps")
+                                
+                                # Create Google Maps URL with waypoints (API format)
+                                # Note: travelmode applies to entire route (Google Maps limitation)
+                                # Set to bicycling as compromise - users can manually adjust first/last segments to walking
+                                origin_coords = f"{start_lat},{start_lon}"
+                                dest_coords = f"{dest_lat},{dest_lon}"
+                                waypoint_a = f"{start_station['lat']},{start_station['lon']}"
+                                waypoint_b = f"{end_station['lat']},{end_station['lon']}"
+                                
+                                # Google Maps Directions API URL
+                                google_maps_url = (
+                                    f"https://www.google.com/maps/dir/?api=1"
+                                    f"&origin={origin_coords}"
+                                    f"&destination={dest_coords}"
+                                    f"&waypoints={waypoint_a}|{waypoint_b}"
+                                    f"&travelmode=bicycling"
+                                )
+                                
+                                # Display button with description
+                                st.markdown(f"""
+                                <a href="{google_maps_url}" target="_blank" style="text-decoration: none;">
+                                    <div style="background: linear-gradient(135deg, #4285f4 0%, #34a853 100%); 
+                                                color: white; padding: 1rem 1.5rem; border-radius: 8px; 
+                                                text-align: center; font-weight: 600; font-size: 1.1rem;
+                                                box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+                                                transition: transform 0.2s;">
+                                        🗺️ Open Route in Google Maps
+                                    </div>
+                                </a>
+                                """, unsafe_allow_html=True)
+                                
+                                st.caption("📍 Opens in Google Maps with bicycling mode. Adjust first/last segments to walking if needed.")
                 
                 except Exception as e:
                     import traceback
