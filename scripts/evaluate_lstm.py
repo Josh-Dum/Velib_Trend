@@ -569,6 +569,15 @@ def main():
         mlflow.set_tag("experiment_type", "evaluation")
         mlflow.set_tag("model_trained_at", config['trained_at'])
         
+        # Log feature engineering metadata if available (for v5+)
+        if 'feature_engineering' in config:
+            fe = config['feature_engineering']
+            mlflow.log_param("continuous_features", ','.join(fe['continuous_features']))
+            mlflow.log_param("binary_features", ','.join(fe['binary_features']))
+            mlflow.log_param("normalization_strategy", fe['normalization'])
+            mlflow.set_tag("feature_engineering", "enhanced_temporal_v1")
+            logger.info("✅ Feature engineering metadata logged to MLflow")
+        
         # Load scaler
         scaler = load_scaler()
         

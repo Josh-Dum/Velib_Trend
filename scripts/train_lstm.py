@@ -8,7 +8,7 @@ This script trains a PyTorch LSTM model that:
 
 Architecture:
     Input 1: Sequence (batch, 24) → LSTM(128) → LSTM(64)
-    Input 2: Static features (batch, 7)
+    Input 2: Static features (batch, 12)
     Concatenate → Dense(32) → Dropout(0.2) → Output(3)
 
 GPU acceleration: Automatically uses CUDA if available (RTX 4060)
@@ -54,8 +54,10 @@ DENSE_HIDDEN = 32        # Dense layer after concatenation
 DROPOUT_RATE = 0.2       # Dropout probability (20% neurons turned off)
 NUM_LSTM_LAYERS = 2      # Number of LSTM layers
 
-# Static features size
-STATIC_FEATURES_SIZE = 7  # [hour, day_of_week, is_weekend, capacity, station_id, lat, lon]
+# Static features size (12 total: 9 continuous normalized + 3 binary)
+# Continuous (normalized): hour, day_of_week, capacity, station_id, lat, lon, part_of_day, month, season
+# Binary (0/1): is_weekend, is_rush_hour, is_lunch_time
+STATIC_FEATURES_SIZE = 12
 
 # Output size
 OUTPUT_SIZE = 3          # Predict T+1h, T+2h, T+3h
@@ -166,7 +168,7 @@ class VelibSequenceDataset(Dataset):
         
         # Convert to float32 explicitly (handles object dtypes)
         self.X_seq = torch.FloatTensor(data['X_seq'].astype(np.float32))      # (N, 24)
-        self.X_static = torch.FloatTensor(data['X_static'].astype(np.float32)) # (N, 7)
+        self.X_static = torch.FloatTensor(data['X_static'].astype(np.float32)) # (N, 12)
         self.y = torch.FloatTensor(data['y'].astype(np.float32))              # (N, 3)
         
         logger.info(f"✅ Loaded {len(self)} sequences")
@@ -257,7 +259,7 @@ class MultiInputLSTM(nn.Module):
         
         Args:
             X_seq: Sequence input (batch, 24)
-            X_static: Static features (batch, 7)
+            X_static: Static features (batch, 12) - [9 normalized continuous + 3 binary]
             
         Returns:
             predictions: (batch, 3) predictions for T+1, T+2, T+3
@@ -275,7 +277,7 @@ class MultiInputLSTM(nn.Module):
         lstm_last = lstm_out2[:, -1, :]  # (batch, lstm_hidden_2)
         
         # Concatenate LSTM output with static features
-        combined = torch.cat([lstm_last, X_static], dim=1)  # (batch, lstm_hidden_2 + 7)
+        combined = torch.cat([lstm_last, X_static], dim=1)  # (batch, lstm_hidden_2 + 12)
         
         # Pass through dense layers
         x = self.fc1(combined)      # (batch, dense_hidden)
@@ -520,6 +522,14 @@ def main():
         mlflow.set_tag("data_version", data_metadata['version'])
         mlflow.set_tag("experiment_type", f"training_{data_metadata['version']}")
         
+        # Log feature engineering metadata (NEW in v5)
+        mlflow.log_param("continuous_features", "hour,day_of_week,capacity,station_id,lat,lon,part_of_day,month,season")
+        mlflow.log_param("binary_features", "is_weekend,is_rush_hour,is_lunch_time")
+        mlflow.log_param("normalization_strategy", "StandardScaler for continuous, 0/1 for binary")
+        mlflow.log_param("num_continuous_features", 9)
+        mlflow.log_param("num_binary_features", 3)
+        mlflow.set_tag("feature_engineering", "enhanced_temporal_v1")
+        
         # Create data loaders with parallel workers for faster data loading
         train_loader = DataLoader(
             train_dataset,
@@ -732,6 +742,13 @@ def main():
                 'train_sequences': len(train_dataset),
                 'val_sequences': len(val_dataset),
                 'test_sequences': len(test_dataset),
+            },
+            'feature_engineering': {
+                'continuous_features': ['hour', 'day_of_week', 'capacity', 'station_id', 
+                                       'latitude', 'longitude', 'part_of_day', 'month', 'season'],
+                'binary_features': ['is_weekend', 'is_rush_hour', 'is_lunch_time'],
+                'normalization': 'StandardScaler for continuous, 0/1 for binary',
+                'total_features': STATIC_FEATURES_SIZE,
             },
             'device': str(DEVICE),
             'trained_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
