@@ -186,6 +186,11 @@ def add_temporal_features(df):
     - hour: Hour of day (0-23)
     - day_of_week: Day of week (0=Monday, 6=Sunday)
     - is_weekend: Boolean (Saturday or Sunday)
+    - is_rush_hour: Boolean (morning/evening commute hours)
+    - part_of_day: Integer (0=night, 1=morning, 2=afternoon, 3=evening)
+    - is_lunch_time: Boolean (lunch hours 12-13)
+    - month: Month of year (1-12)
+    - season: Season (1=winter, 2=spring, 3=summer, 4=autumn)
     
     Args:
         df: Input DataFrame with 'capture_time' column
@@ -195,14 +200,41 @@ def add_temporal_features(df):
     """
     print("🔄 Step 6: Adding temporal features...")
     
-    # Extract temporal features
+    # Extract basic temporal features
     df['hour'] = df['capture_time'].dt.hour
     df['day_of_week'] = df['capture_time'].dt.dayofweek  # 0=Monday, 6=Sunday
     df['is_weekend'] = df['day_of_week'].isin([5, 6])  # Saturday=5, Sunday=6
     
-    print(f"  ✅ Added features: hour, day_of_week, is_weekend")
+    # Rush hour patterns (strong commuting signal)
+    df['is_rush_hour'] = df['hour'].isin([7, 8, 9, 17, 18, 19])
+    
+    # Part of day (behavioral patterns differ)
+    # Using integer encoding: 0=night, 1=morning, 2=afternoon, 3=evening
+    df['part_of_day'] = pd.cut(
+        df['hour'], 
+        bins=[0, 6, 12, 18, 24], 
+        labels=[0, 1, 2, 3],  # Integer labels for neural network compatibility
+        include_lowest=True
+    ).astype(int)
+    
+    # Lunch time (midday bike usage spike)
+    df['is_lunch_time'] = df['hour'].isin([12, 13])
+    
+    # Month and season (summer vs winter patterns)
+    df['month'] = df['capture_time'].dt.month
+    df['season'] = (df['month'] % 12 // 3 + 1)  # 1=winter, 2=spring, 3=summer, 4=autumn
+    
+    # Print summary statistics
+    print(f"  ✅ Basic features: hour, day_of_week, is_weekend")
     print(f"     Hour range: {df['hour'].min()}-{df['hour'].max()}")
     print(f"     Weekend records: {df['is_weekend'].sum():,} ({df['is_weekend'].mean():.1%})")
+    print(f"  ✅ Enhanced features: is_rush_hour, part_of_day, is_lunch_time, month, season")
+    print(f"     Rush hour records: {df['is_rush_hour'].sum():,} ({df['is_rush_hour'].mean():.1%})")
+    print(f"     Lunch time records: {df['is_lunch_time'].sum():,} ({df['is_lunch_time'].mean():.1%})")
+    print(f"     Part of day distribution:")
+    print(f"       {df['part_of_day'].value_counts().to_dict()}")
+    print(f"     Season distribution:")
+    print(f"       {df['season'].value_counts().sort_index().to_dict()}")
     print(f"✅ Feature engineering complete\n")
     
     return df

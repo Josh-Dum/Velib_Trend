@@ -54,7 +54,6 @@ Based on analysis of winning solutions from major bike-sharing competitions:
 
 #### 1.1 Enhanced Temporal Features
 **Effort**: Low (30 minutes)  
-**Expected Impact**: 5-10% MAE reduction
 
 Add these derived features to `bronze_to_silver.py`:
 ```python

@@ -9,13 +9,17 @@ Output:
     - data/silver/sequences_train.npz (sequence features + targets)
     - data/silver/sequences_val.npz
     - data/silver/sequences_test.npz
-    - data/silver/scaler.pkl (for inverse transform during inference)
+    - data/silver/scaler.pkl (for target inverse transform during inference)
+    - data/silver/static_scaler.pkl (for static features normalization)
     - data/silver/station_mappings.json (stationcode → numeric ID)
 
 Architecture requirements:
     - Sequence length: 24 timesteps (24 hours of history)
     - Prediction horizon: 3 timesteps (T+1, T+2, T+3 hours ahead)
-    - Static features: hour, day_of_week, is_weekend, capacity, station_id, lat, lon
+    - Static features (12 total):
+        * Normalized continuous (9): hour, day_of_week, capacity, station_id, 
+          lat, lon, part_of_day, month, season
+        * Binary as-is (3): is_weekend, is_rush_hour, is_lunch_time
     - Target: numbikesavailable (bikes available at T+1, T+2, T+3)
 
 Split strategy (time-based to avoid data leakage):
@@ -47,7 +51,8 @@ INPUT_FILE = SILVER_DIR / "velib_training_data.parquet"
 OUTPUT_TRAIN = SILVER_DIR / "sequences_train.npz"
 OUTPUT_VAL = SILVER_DIR / "sequences_val.npz"
 OUTPUT_TEST = SILVER_DIR / "sequences_test.npz"
-SCALER_FILE = SILVER_DIR / "scaler.pkl"
+SCALER_FILE = SILVER_DIR / "scaler.pkl"  # Target scaler (numbikesavailable)
+STATIC_SCALER_FILE = SILVER_DIR / "static_scaler.pkl"  # Static features scaler
 MAPPINGS_FILE = SILVER_DIR / "station_mappings.json"
 
 
@@ -146,27 +151,81 @@ def fit_scaler(df_train: pd.DataFrame) -> StandardScaler:
     """
     Fit StandardScaler on training data for the target variable (numbikesavailable).
     We normalize the target to help LSTM training converge faster.
-    Static features will be normalized separately in the LSTM model.
+    
+    Args:
+        df_train: Training dataframe
+        
+    Returns:
+        StandardScaler fitted on target variable
     """
-    print("📊 Fitting scaler on training data...")
+    print("📊 Fitting target scaler on training data...")
     scaler = StandardScaler()
     scaler.fit(df_train[['numbikesavailable']])
-    print(f"✅ Scaler fitted (mean={scaler.mean_[0]:.2f}, std={scaler.scale_[0]:.2f})")
+    print(f"✅ Target scaler fitted (mean={scaler.mean_[0]:.2f}, std={scaler.scale_[0]:.2f})")
+    return scaler
+
+
+def fit_static_scaler(df_train: pd.DataFrame) -> StandardScaler:
+    """
+    Fit StandardScaler on training data for CONTINUOUS static features only.
+    
+    Binary features (is_weekend, is_rush_hour, is_lunch_time) are NOT normalized
+    because they are already on [0, 1] scale with semantic meaning.
+    
+    This normalizes continuous features to zero mean and unit variance, which helps
+    neural networks train more efficiently and prevents features with large values
+    (like station_id) from dominating the learning.
+    
+    Args:
+        df_train: Training dataframe
+        
+    Returns:
+        StandardScaler fitted on continuous static features (9 features)
+    """
+    print("📊 Fitting static features scaler on training data...")
+    
+    # Define CONTINUOUS features to normalize (9 total)
+    # Binary features (is_weekend, is_rush_hour, is_lunch_time) are excluded
+    continuous_cols = [
+        'hour', 'day_of_week', 'capacity', 
+        'station_id', 'latitude', 'longitude',
+        'part_of_day', 'month', 'season'
+    ]
+    
+    scaler = StandardScaler()
+    scaler.fit(df_train[continuous_cols])
+    
+    # Print statistics for key features
+    print(f"✅ Static scaler fitted on {len(continuous_cols)} continuous features")
+    print(f"   (Binary features is_weekend, is_rush_hour, is_lunch_time kept as-is)")
+    print(f"   Sample statistics:")
+    print(f"   - hour: mean={scaler.mean_[0]:.2f}, std={scaler.scale_[0]:.2f}")
+    print(f"   - capacity: mean={scaler.mean_[2]:.2f}, std={scaler.scale_[2]:.2f}")
+    print(f"   - station_id: mean={scaler.mean_[3]:.0f}, std={scaler.scale_[3]:.0f}")
+    
     return scaler
 
 
 def create_sequences_for_station(
     station_df: pd.DataFrame,
     scaler: StandardScaler,
+    static_scaler: StandardScaler,
     sequence_length: int = SEQUENCE_LENGTH,
     horizons: list = PREDICTION_HORIZONS
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Create sequences for a single station.
     
+    Args:
+        station_df: DataFrame for one station
+        scaler: Target variable scaler
+        static_scaler: Static features scaler
+        sequence_length: Number of past timesteps to use
+        horizons: Prediction horizons [1, 2, 3]
+    
     Returns:
         X_seq: (n_samples, sequence_length) - normalized bikes_available sequence
-        X_static: (n_samples, n_static_features) - static features at prediction time
+        X_static: (n_samples, n_static_features) - normalized static features
         y: (n_samples, len(horizons)) - target bikes_available at T+1, T+2, T+3
     """
     # Sort by time (should already be sorted, but double-check)
@@ -178,9 +237,27 @@ def create_sequences_for_station(
     # Normalize target
     bikes_normalized = scaler.transform(bikes_available.reshape(-1, 1)).flatten()
     
-    # Extract static features (at each timestep)
-    static_features = station_df[['hour', 'day_of_week', 'is_weekend', 'capacity', 
-                                   'station_id', 'latitude', 'longitude']].values
+    # Define continuous features (will be normalized)
+    continuous_cols = [
+        'hour', 'day_of_week', 'capacity', 
+        'station_id', 'latitude', 'longitude',
+        'part_of_day', 'month', 'season'
+    ]
+    
+    # Define binary features (kept as-is, NOT normalized)
+    binary_cols = ['is_weekend', 'is_rush_hour', 'is_lunch_time']
+    
+    # Extract and normalize continuous features
+    continuous_raw = station_df[continuous_cols].values
+    continuous_normalized = static_scaler.transform(continuous_raw)
+    
+    # Extract binary features (no normalization)
+    binary_raw = station_df[binary_cols].values
+    
+    # Combine: [continuous_normalized, binary_raw] to maintain order
+    # Final order: hour, day_of_week, capacity, station_id, lat, lon, 
+    #              part_of_day, month, season, is_weekend, is_rush_hour, is_lunch_time
+    static_features = np.concatenate([continuous_normalized, binary_raw], axis=1)
     
     # Create sequences
     X_seq_list = []
@@ -195,6 +272,7 @@ def create_sequences_for_station(
         seq = bikes_normalized[i - sequence_length:i]
         
         # Static features at prediction time (timestep i)
+        # Contains: 9 normalized continuous + 3 binary (0/1) features
         static = static_features[i]
         
         # Targets: bikes_available at T+1, T+2, T+3 (NORMALIZED for consistent training)
@@ -209,7 +287,7 @@ def create_sequences_for_station(
     
     return (
         np.array(X_seq_list),      # (n_samples, sequence_length)
-        np.array(X_static_list),   # (n_samples, n_static_features)
+        np.array(X_static_list),   # (n_samples, n_static_features) - NORMALIZED
         np.array(y_list)           # (n_samples, len(horizons))
     )
 
@@ -217,10 +295,20 @@ def create_sequences_for_station(
 def create_sequences_for_split(
     df: pd.DataFrame,
     scaler: StandardScaler,
+    static_scaler: StandardScaler,
     split_name: str
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Create sequences for all stations in a data split (train/val/test).
+    
+    Args:
+        df: DataFrame for this split
+        scaler: Target variable scaler
+        static_scaler: Static features scaler
+        split_name: Name of split for logging
+    
+    Returns:
+        Concatenated arrays for all stations
     """
     print(f"🔄 Creating sequences for {split_name} split...")
     
@@ -243,7 +331,7 @@ def create_sequences_for_split(
             skipped += 1
             continue
         
-        X_seq, X_static, y = create_sequences_for_station(station_df, scaler)
+        X_seq, X_static, y = create_sequences_for_station(station_df, scaler, static_scaler)
         
         if X_seq is not None:
             X_seq_all.append(X_seq)
@@ -284,10 +372,17 @@ def save_sequences(
 
 
 def save_scaler(scaler: StandardScaler):
-    """Save scaler for later use during inference."""
+    """Save fitted target scaler for later use during inference."""
     with open(SCALER_FILE, 'wb') as f:
         pickle.dump(scaler, f)
-    print(f"✅ Saved scaler to {SCALER_FILE}")
+    print(f"✅ Saved target scaler to {SCALER_FILE}")
+
+
+def save_static_scaler(scaler: StandardScaler):
+    """Save fitted static features scaler for later use during inference."""
+    with open(STATIC_SCALER_FILE, 'wb') as f:
+        pickle.dump(scaler, f)
+    print(f"✅ Saved static scaler to {STATIC_SCALER_FILE}")
 
 
 def save_station_mappings(mapping: Dict[str, int]):
@@ -325,6 +420,7 @@ def print_summary(
     print(f"  - {OUTPUT_VAL}")
     print(f"  - {OUTPUT_TEST}")
     print(f"  - {SCALER_FILE}")
+    print(f"  - {STATIC_SCALER_FILE}")
     print(f"  - {MAPPINGS_FILE}")
     print()
     print("🎉 Sequences are ready for LSTM training!")
@@ -355,14 +451,17 @@ def main():
     # Step 4: Split data by time
     df_train, df_val, df_test = split_data_by_time(df)
     
-    # Step 5: Fit scaler on training data
+    # Step 5: Fit scalers on training data
     scaler = fit_scaler(df_train)
     save_scaler(scaler)
     
+    static_scaler = fit_static_scaler(df_train)
+    save_static_scaler(static_scaler)
+    
     # Step 6: Create sequences for each split
-    X_seq_train, X_static_train, y_train = create_sequences_for_split(df_train, scaler, "TRAIN")
-    X_seq_val, X_static_val, y_val = create_sequences_for_split(df_val, scaler, "VAL")
-    X_seq_test, X_static_test, y_test = create_sequences_for_split(df_test, scaler, "TEST")
+    X_seq_train, X_static_train, y_train = create_sequences_for_split(df_train, scaler, static_scaler, "TRAIN")
+    X_seq_val, X_static_val, y_val = create_sequences_for_split(df_val, scaler, static_scaler, "VAL")
+    X_seq_test, X_static_test, y_test = create_sequences_for_split(df_test, scaler, static_scaler, "TEST")
     
     # Step 7: Save sequences
     save_sequences(X_seq_train, X_static_train, y_train, OUTPUT_TRAIN)
