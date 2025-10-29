@@ -546,19 +546,23 @@ def main():
     # ========================================================================
     mlflow.set_experiment("velib-lstm-training")
     
+    # Load model and config first to get data version
+    model, config = load_model_and_config()
+    
+    # Create dynamic run name based on actual data version
+    data_version = config['data']['version']  # e.g., "v653snapshots"
+    run_name = f"evaluation_{data_version}"
+    
     # Start a new run for evaluation (will be linked to training run via tags)
-    with mlflow.start_run(run_name="evaluation_v2_295snapshots"):
+    with mlflow.start_run(run_name=run_name):
         logger.info("📊 MLflow tracking enabled")
         logger.info(f"   Experiment: velib-lstm-training")
-        logger.info(f"   Run: evaluation_v2_295snapshots")
+        logger.info(f"   Run: {run_name}")
         logger.info("")
     
         # ====================================================================
         # Load Model and Data
         # ====================================================================
-        
-        # Load model and config
-        model, config = load_model_and_config()
         
         # Log data version for linking with training run
         mlflow.set_tag("data_version", config['data']['version'])

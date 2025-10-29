@@ -491,9 +491,14 @@ def main():
     logger.info("🔬 Setting up MLflow experiment tracking...")
     mlflow.set_experiment("velib-lstm-training")
     
-    # Start MLflow run
-    with mlflow.start_run():
+    # Extract metadata dynamically from Parquet file to create run name
+    data_metadata = extract_data_metadata()
+    run_name = f"training_{data_metadata['version']}"
+    
+    # Start MLflow run with descriptive name
+    with mlflow.start_run(run_name=run_name):
         logger.info(f"   MLflow run ID: {mlflow.active_run().info.run_id}")
+        logger.info(f"   MLflow run name: {run_name}")
         logger.info("")
     
         # ====================================================================
@@ -504,9 +509,6 @@ def main():
         val_dataset = VelibSequenceDataset(SILVER_DIR / "sequences_val.npz")
         test_dataset = VelibSequenceDataset(SILVER_DIR / "sequences_test.npz")
         logger.info("")
-        
-        # Extract metadata dynamically from Parquet file
-        data_metadata = extract_data_metadata()
         
         # Log data versioning parameters (CRITICAL for comparing runs)
         mlflow.log_param("data_version", data_metadata['version'])
