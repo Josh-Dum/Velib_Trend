@@ -87,9 +87,16 @@ def setup_logging():
 # MODEL LOADING
 # ============================================================================
 
-def load_model_and_config() -> Tuple[nn.Module, Dict]:
+def load_model_and_config(model_path: str = None) -> Tuple[nn.Module, Dict]:
     """
     Load the trained model and its configuration.
+    
+    Supports two modes:
+    1. Standard model: Load from MODEL_DIR/best_model.pth with config.json
+    2. Optuna model: Load from optuna_results/best_model_optuna.pth (self-contained)
+    
+    Args:
+        model_path: Optional path to model checkpoint. If None, uses best_model.pth
     
     Returns:
         model: Loaded PyTorch model
@@ -98,10 +105,53 @@ def load_model_and_config() -> Tuple[nn.Module, Dict]:
     logger = logging.getLogger(__name__)
     logger.info("📂 Loading trained model...")
     
-    # Load config
-    config_path = MODEL_DIR / "config.json"
-    with open(config_path, 'r') as f:
-        config = json.load(f)
+    # Determine model path
+    if model_path is None:
+        checkpoint_path = MODEL_DIR / "best_model.pth"
+        is_optuna = False
+    else:
+        checkpoint_path = Path(model_path)
+        is_optuna = "optuna" in str(checkpoint_path).lower()
+    
+    logger.info(f"   Model: {checkpoint_path.name}")
+    logger.info(f"   Type: {'Optuna optimized' if is_optuna else 'Standard training'}")
+    
+    # Load checkpoint first
+    checkpoint = torch.load(checkpoint_path, map_location=DEVICE)
+    
+    # Extract configuration based on model type
+    if is_optuna:
+        # Optuna model: Extract hyperparameters from checkpoint
+        hparams = checkpoint['hyperparameters']
+        
+        # Create config dictionary matching standard format
+        config = {
+            'architecture': {
+                'lstm_hidden_1': hparams['lstm_hidden_1'],
+                'lstm_hidden_2': hparams['lstm_hidden_2'],
+                'dense_hidden': hparams['dense_hidden'],
+                'static_features_size': hparams['static_features_size'],
+                'output_size': hparams['output_size'],
+                'dropout_rate': hparams['dropout']
+            },
+            'training': {
+                'learning_rate': hparams['learning_rate'],
+                'batch_size': hparams['batch_size']
+            },
+            'data': {
+                'version': 'v653snapshots'  # From Optuna run
+            },
+            'trained_at': checkpoint.get('timestamp', 'unknown'),
+            'model_version': 'v6_optuna',
+            'trial_number': checkpoint.get('trial_number', 'unknown')
+        }
+        
+        logger.info(f"   Trial: #{checkpoint.get('trial_number', 'unknown')}")
+    else:
+        # Standard model: Load from config.json
+        config_path = MODEL_DIR / "config.json"
+        with open(config_path, 'r') as f:
+            config = json.load(f)
     
     # Initialize model with same architecture
     arch = config['architecture']
@@ -115,7 +165,6 @@ def load_model_and_config() -> Tuple[nn.Module, Dict]:
     )
     
     # Load trained weights
-    checkpoint = torch.load(MODEL_DIR / "best_model.pth", map_location=DEVICE)
     model.load_state_dict(checkpoint['model_state_dict'])
     model = model.to(DEVICE)
     model.eval()  # Set to evaluation mode
@@ -527,8 +576,16 @@ def save_metrics_report(metrics: Dict, predictions: np.ndarray, targets: np.ndar
     logger.info(f"✅ Saved to {save_path}")
 
 
-def main():
-    """Main evaluation function."""
+def main(model_path: str = None, run_name: str = None):
+    """
+    Main evaluation function.
+    
+    Args:
+        model_path: Optional path to model checkpoint. 
+                   If None, uses MODEL_DIR/best_model.pth
+                   For Optuna: use 'data/optuna_results/best_model_optuna.pth'
+        run_name: Optional MLflow run name. If None, auto-generated from model config.
+    """
     # Setup logging first
     logger = setup_logging()
     
@@ -547,11 +604,25 @@ def main():
     mlflow.set_experiment("velib-lstm-training")
     
     # Load model and config first to get data version
-    model, config = load_model_and_config()
+    model, config = load_model_and_config(model_path)
     
-    # Create dynamic run name based on actual data version
-    data_version = config['data']['version']  # e.g., "v653snapshots"
-    run_name = f"evaluation_{data_version}"
+    # Determine model version for run name (extracted from config or path)
+    is_optuna_model = (
+        config.get('model_version') == 'v6_optuna' or
+        (model_path and 'optuna' in str(model_path).lower())
+    )
+    
+    data_version = config['data']['version']
+    
+    # Create dynamic run name (use provided name or auto-generate)
+    if run_name is None:
+        if is_optuna_model:
+            trial_num = config.get('trial_number', 'unknown')
+            run_name = f"evaluation_v6_optuna_trial{trial_num}"
+        else:
+            # Standard model evaluation
+            model_version = config.get('model_version', data_version)  # Fallback to data_version
+            run_name = f"evaluation_{model_version}"
     
     # Start a new run for evaluation (will be linked to training run via tags)
     with mlflow.start_run(run_name=run_name):
@@ -568,6 +639,23 @@ def main():
         mlflow.set_tag("data_version", config['data']['version'])
         mlflow.set_tag("experiment_type", "evaluation")
         mlflow.set_tag("model_trained_at", config['trained_at'])
+        mlflow.set_tag("model_version", config.get('model_version', 'v4'))
+        
+        # Log Optuna-specific metadata if applicable
+        if 'trial_number' in config:
+            mlflow.set_tag("optimization_method", "optuna_tpe")
+            mlflow.log_param("optuna_trial", config['trial_number'])
+            logger.info(f"✅ Optuna metadata logged (Trial #{config['trial_number']})")
+        
+        # Log hyperparameters
+        if 'training' in config:
+            mlflow.log_param("learning_rate", config['training']['learning_rate'])
+            mlflow.log_param("batch_size", config['training']['batch_size'])
+        
+        arch = config['architecture']
+        mlflow.log_param("lstm_hidden_1", arch['lstm_hidden_1'])
+        mlflow.log_param("lstm_hidden_2", arch['lstm_hidden_2'])
+        mlflow.log_param("dropout", arch['dropout_rate'])
         
         # Log feature engineering metadata if available (for v5+)
         if 'feature_engineering' in config:
@@ -683,4 +771,22 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='Evaluate LSTM model on test set')
+    parser.add_argument(
+        '--model-path',
+        type=str,
+        default=None,
+        help='Path to model checkpoint (default: data/models/lstm/best_model.pth). '
+             'For Optuna model: data/optuna_results/best_model_optuna.pth'
+    )
+    parser.add_argument(
+        '--run-name',
+        type=str,
+        default=None,
+        help='MLflow run name for logging (optional). Example: evaluation_v7_optuna_regularization'
+    )
+    
+    args = parser.parse_args()
+    main(model_path=args.model_path, run_name=args.run_name)

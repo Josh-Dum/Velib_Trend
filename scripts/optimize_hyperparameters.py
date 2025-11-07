@@ -8,8 +8,10 @@ Based on research from 238+ sources, optimizing:
 - learning_rate: [1e-4, 1e-2] log scale
 - lstm_hidden_1: [64, 256]
 - lstm_hidden_2: [32, 128]
-- dropout: [0.2, 0.4]
+- dense_hidden: {32, 48, 64}
+- dropout: [0.15, 0.45]
 - batch_size: [64, 128, 256]
+- weight_decay: [1e-6, 1e-3] log scale
 
 GPU Performance Optimizations (RTX 4060 Ada):
 - ⚡ Mixed Precision (AMP): 2-3× speedup via Tensor Cores
@@ -25,16 +27,14 @@ Expected speedup: 1.5-3× per epoch vs baseline FP32
 Runtime: 8-10 hours with optimizations (vs 12-14h baseline) + 60 trials + MedianPruner
 """
 
-import os
 import sys
 import json
+import argparse
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 import numpy as np
-import mlflow
-import mlflow.pytorch
 import optuna
 from optuna.pruners import MedianPruner
 from optuna.samplers import TPESampler
@@ -231,7 +231,7 @@ def validate_epoch(model, val_loader, criterion, device, use_amp=True):
     return total_loss / num_batches
 
 
-def objective(trial, train_data, val_data, device, config, output_dir):
+def objective(trial, train_data, val_data, device, config, study_dir):
     """
     Optuna objective function to minimize validation loss.
     
@@ -244,17 +244,19 @@ def objective(trial, train_data, val_data, device, config, output_dir):
         val_data: Tuple of (X_seq_val, X_static_val, y_val)
         device: torch device (cuda/cpu)
         config: Model configuration dict
-        output_dir: Directory to save best model
+        study_dir: Directory to save best model
     
     Returns:
         Best validation loss for this trial
     """
-    # Suggest hyperparameters (5 total - research-backed ranges)
+    # Suggest hyperparameters (expanded search space focuses on regularization)
     learning_rate = trial.suggest_float('learning_rate', 1e-4, 1e-2, log=True)
     lstm_hidden_1 = trial.suggest_int('lstm_hidden_1', 64, 256, step=16)
     lstm_hidden_2 = trial.suggest_int('lstm_hidden_2', 32, 128, step=16)
-    dropout = trial.suggest_float('dropout', 0.2, 0.4)
+    dense_hidden = trial.suggest_categorical('dense_hidden', config['dense_hidden_options'])
+    dropout = trial.suggest_float('dropout', 0.15, 0.45)
     batch_size = trial.suggest_categorical('batch_size', [64, 128, 256])
+    weight_decay = trial.suggest_float('weight_decay', 1e-6, 1e-3, log=True)
     
     # Unpack data
     X_seq_train, X_static_train, y_train = train_data
@@ -297,7 +299,7 @@ def objective(trial, train_data, val_data, device, config, output_dir):
         static_features_size=config['static_features_size'],
         lstm_hidden_1=lstm_hidden_1,
         lstm_hidden_2=lstm_hidden_2,
-        dense_hidden=config['dense_hidden'],  # Keep fixed at 32
+        dense_hidden=dense_hidden,
         dropout=dropout,
         output_size=config['output_size']
     ).to(device)
@@ -308,7 +310,7 @@ def objective(trial, train_data, val_data, device, config, output_dir):
     
     # Loss and optimizer
     criterion = nn.MSELoss()
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
     
     # Mixed precision scaler for AMP
     scaler = torch.cuda.amp.GradScaler() if device.type == 'cuda' else None
@@ -360,7 +362,7 @@ def objective(trial, train_data, val_data, device, config, output_dir):
         
         if is_global_best:
             # Save the best model from this trial
-            model_save_path = output_dir / 'best_model_optuna.pth'
+            model_save_path = study_dir / 'best_model_optuna.pth'
             
             # Extract model from torch.compile wrapper if needed
             model_to_save = model._orig_mod if hasattr(model, '_orig_mod') else model
@@ -376,9 +378,10 @@ def objective(trial, train_data, val_data, device, config, output_dir):
                     'learning_rate': learning_rate,
                     'lstm_hidden_1': lstm_hidden_1,
                     'lstm_hidden_2': lstm_hidden_2,
+                    'dense_hidden': dense_hidden,
                     'dropout': dropout,
                     'batch_size': batch_size,
-                    'dense_hidden': config['dense_hidden'],
+                    'weight_decay': weight_decay,
                     'static_features_size': config['static_features_size'],
                     'output_size': config['output_size']
                 },
@@ -396,13 +399,15 @@ def objective(trial, train_data, val_data, device, config, output_dir):
     return best_val_loss
 
 
-def run_optimization(n_trials=60, timeout=18*3600):
+def run_optimization(n_trials=30, timeout=12*3600, study_label='regularization_followup', resume=False):
     """
     Run hyperparameter optimization with Optuna.
     
     Args:
-        n_trials: Number of trials to run (default: 60)
-        timeout: Maximum time in seconds (default: 18 hours)
+    n_trials: Number of trials to run (default: 30)
+    timeout: Maximum time in seconds (default: 12 hours)
+    study_label: Subfolder/name suffix to isolate results (default: 'regularization_followup')
+    resume: Whether to resume an existing study with same label (default: False)
     """
     print("=" * 80)
     print("🔬 HYPERPARAMETER OPTIMIZATION FOR VELIB LSTM MODEL")
@@ -416,8 +421,11 @@ def run_optimization(n_trials=60, timeout=18*3600):
     
     # Setup paths
     data_dir = PROJECT_ROOT / 'data' / 'silver'
-    output_dir = PROJECT_ROOT / 'data' / 'optuna_results'
-    output_dir.mkdir(exist_ok=True)
+    base_output_dir = PROJECT_ROOT / 'data' / 'optuna_results'
+    study_dir = base_output_dir / study_label
+    study_dir.mkdir(parents=True, exist_ok=True)
+    print(f"📁 Study label: {study_label}")
+    print(f"   Output directory: {study_dir}\n")
     
     # Device
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -450,13 +458,13 @@ def run_optimization(n_trials=60, timeout=18*3600):
     
     # Load data
     (X_seq_train, X_static_train, y_train,
-     X_seq_val, X_static_val, y_val) = load_sequences(data_dir)
+    X_seq_val, X_static_val, y_val) = load_sequences(data_dir)
     
     # Configuration
     config = {
         'sequence_features_size': 1,  # Single feature (bikes_available) per timestep
         'static_features_size': X_static_train.shape[1],  # Static features (12)
-        'dense_hidden': 32,  # Keep fixed (research: not critical)
+        'dense_hidden_options': [32, 48, 64],  # Encourage modest head capacity
         'output_size': y_train.shape[1],  # 3 horizons (T+1h, T+2h, T+3h)
         'max_epochs': 50,  # Maximum epochs per trial
     }
@@ -465,6 +473,7 @@ def run_optimization(n_trials=60, timeout=18*3600):
     print(f"   - Sequence features: {config['sequence_features_size']}")
     print(f"   - Static features: {config['static_features_size']}")
     print(f"   - Output targets: {config['output_size']}")
+    print(f"   - Dense hidden options: {config['dense_hidden_options']}")
     print(f"   - Max epochs: {config['max_epochs']}")
     print()
     
@@ -481,14 +490,22 @@ def run_optimization(n_trials=60, timeout=18*3600):
         interval_steps=1       # Check every epoch
     )
     
-    study = optuna.create_study(
-        study_name='velib_lstm_optimization',
-        direction='minimize',
-        sampler=sampler,
-        pruner=pruner,
-        storage=f'sqlite:///{output_dir}/optuna_study.db',
-        load_if_exists=True  # Resume if interrupted
-    )
+    study_name = f'velib_lstm_optimization__{study_label}'
+    storage_url = f'sqlite:///{study_dir}/optuna_study.db'
+
+    try:
+        study = optuna.create_study(
+            study_name=study_name,
+            direction='minimize',
+            sampler=sampler,
+            pruner=pruner,
+            storage=storage_url,
+            load_if_exists=resume
+        )
+    except optuna.exceptions.DuplicatedStudyError as exc:
+        raise RuntimeError(
+            "Study already exists. Use a new study_label or --resume to append to it."
+        ) from exc
     
     # Prepare data
     train_data = (X_seq_train, X_static_train, y_train)
@@ -497,12 +514,12 @@ def run_optimization(n_trials=60, timeout=18*3600):
     # Run optimization
     print("🚀 Starting optimization...")
     print(f"   Start time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"\n💡 Best model will be automatically saved to: {output_dir}/best_model_optuna.pth")
+    print(f"\n💡 Best model will be automatically saved to: {study_dir}/best_model_optuna.pth")
     print("   (Updates whenever a trial achieves new global best validation loss)\n")
     
     try:
         study.optimize(
-            lambda trial: objective(trial, train_data, val_data, device, config, output_dir),
+            lambda trial: objective(trial, train_data, val_data, device, config, study_dir),
             n_trials=n_trials,
             timeout=timeout,
             show_progress_bar=True
@@ -548,7 +565,7 @@ def run_optimization(n_trials=60, timeout=18*3600):
         'optimization_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     }
     
-    results_path = output_dir / 'optimization_results.json'
+    results_path = study_dir / 'optimization_results.json'
     with open(results_path, 'w') as f:
         json.dump(results, f, indent=2)
     print(f"💾 Results saved to: {results_path}")
@@ -560,27 +577,27 @@ def run_optimization(n_trials=60, timeout=18*3600):
     try:
         # 1. Optimization history
         fig = vis.plot_optimization_history(study)
-        fig.write_html(str(output_dir / 'optimization_history.html'))
+        fig.write_html(str(study_dir / 'optimization_history.html'))
         print("   ✅ optimization_history.html")
-        
+
         # 2. Hyperparameter importances
         fig = vis.plot_param_importances(study)
-        fig.write_html(str(output_dir / 'param_importances.html'))
+        fig.write_html(str(study_dir / 'param_importances.html'))
         print("   ✅ param_importances.html")
-        
+
         # 3. Parallel coordinate plot
         fig = vis.plot_parallel_coordinate(study, params=['learning_rate', 'lstm_hidden_1', 'dropout'])
-        fig.write_html(str(output_dir / 'parallel_coordinate.html'))
+        fig.write_html(str(study_dir / 'parallel_coordinate.html'))
         print("   ✅ parallel_coordinate.html")
-        
+
         # 4. Slice plot
         fig = vis.plot_slice(study, params=['learning_rate', 'lstm_hidden_1', 'dropout'])
-        fig.write_html(str(output_dir / 'slice_plot.html'))
+        fig.write_html(str(study_dir / 'slice_plot.html'))
         print("   ✅ slice_plot.html")
-        
+
         print()
-        print(f"📂 All visualizations saved to: {output_dir}")
-        
+        print(f"📂 All visualizations saved to: {study_dir}")
+
     except Exception as e:
         print(f"   ⚠️  Error generating visualizations: {e}")
     
@@ -591,7 +608,7 @@ def run_optimization(n_trials=60, timeout=18*3600):
     print()
     
     # Check if best model was saved
-    best_model_path = output_dir / 'best_model_optuna.pth'
+    best_model_path = study_dir / 'best_model_optuna.pth'
     if best_model_path.exists():
         print("📦 BEST MODEL SAVED!")
         print(f"   Location: {best_model_path}")
@@ -607,7 +624,7 @@ def run_optimization(n_trials=60, timeout=18*3600):
         print()
     
     print("🎯 Next steps:")
-    print("   1. Review visualizations in data/optuna_results/")
+    print(f"   1. Review visualizations in data/optuna_results/{study_label}/")
     print("   2. OPTION A: Use saved model directly (best_model_optuna.pth)")
     print("   3. OPTION B: Retrain 3-5 times with best hyperparameters (reproducibility check)")
     print("   4. Evaluate on test set with evaluate_lstm.py (ONLY ONCE)")
@@ -621,8 +638,20 @@ def run_optimization(n_trials=60, timeout=18*3600):
     return study
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="Optuna hyperparameter optimization for the Vélib LSTM model")
+    parser.add_argument('--n-trials', type=int, default=30, help='Number of Optuna trials to run (default: 30)')
+    parser.add_argument('--timeout', type=int, default=12*3600, help='Max runtime in seconds (default: 12h)')
+    parser.add_argument('--study-label', type=str, default='regularization_followup', help='Subdirectory/name suffix for this study run')
+    parser.add_argument('--resume', action='store_true', help='Resume an existing study with the same label instead of starting fresh')
+    return parser.parse_args()
+
+
 if __name__ == '__main__':
-    # Run optimization
-    # For testing: run_optimization(n_trials=2, timeout=3600)  # 2 trials, 1 hour max
-    # For full run: run_optimization(n_trials=60, timeout=24*3600)  # 60 trials, 24 hours max
-    study = run_optimization(n_trials=60, timeout=24*3600)  # FULL RUN: 60 trials
+    args = parse_args()
+    study = run_optimization(
+        n_trials=args.n_trials,
+        timeout=args.timeout,
+        study_label=args.study_label,
+        resume=args.resume
+    )
