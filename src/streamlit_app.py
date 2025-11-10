@@ -401,6 +401,22 @@ try:
         # Apply row-wise for clarity
         df["color"] = df.apply(pct_to_color, axis=1)
 
+        # Add color codes for tooltips (bikes and docks)
+        def get_availability_color(value):
+            """Return hex color based on availability count"""
+            if pd.isna(value):
+                return "#6B7280"  # Gray for unknown
+            val = int(value)
+            if val >= 5:
+                return "#5DBB63"  # Green
+            elif val >= 1:
+                return "#F39C12"  # Orange
+            else:
+                return "#E74C3C"  # Red
+        
+        df["bikes_color"] = df["numbikesavailable"].apply(get_availability_color)
+        df["docks_color"] = df["numdocksavailable"].apply(get_availability_color)
+
         df["lat"] = pd.to_numeric(df.get("lat"), errors="coerce")
         df["lon"] = pd.to_numeric(df.get("lon"), errors="coerce")
         map_df = df.dropna(subset=["lat", "lon"]).copy()
@@ -469,18 +485,45 @@ try:
                 data=map_df,
                 get_position="[lon, lat]",
                 get_fill_color="color",
-                get_radius=55,
+                get_radius=80,  # Larger base radius for better visibility
                 pickable=True,
-                radius_min_pixels=4,
-                radius_max_pixels=25,
+                radius_min_pixels=6,  # Minimum size when zoomed out
+                radius_max_pixels=40,  # Maximum size when zoomed in
+                get_line_color=[255, 255, 255, 180],  # White stroke for definition
+                line_width_min_pixels=1.5,  # Subtle outline
+                stroked=True,
+                filled=True,
+                opacity=0.85,  # Slightly transparent for modern look
             )
             if mode == "bike":
                 metric_label = "Bikes"
             else:
                 metric_label = "Docks"
             tooltip = {
-                "html": "<b>{name}</b><br/>Station: {stationcode}<br/>Bikes: {numbikesavailable}<br/>Docks: {numdocksavailable}",
-                "style": {"backgroundColor": "#262730", "color": "white", "fontSize": "14px", "borderRadius": "4px"},
+                "html": """
+                    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+                        <div style="font-size: 15px; font-weight: 600; margin-bottom: 8px; color: #5DBB63;">{name}</div>
+                        <div style="font-size: 13px; line-height: 1.6;">
+                            <div style="display: flex; justify-content: space-between; margin: 4px 0;">
+                                <span style="color: #9CA3AF;">🚲 Bikes:</span>
+                                <span style="font-weight: 600; color: {bikes_color};">{numbikesavailable}</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; margin: 4px 0;">
+                                <span style="color: #9CA3AF;">🅿️ Docks:</span>
+                                <span style="font-weight: 600; color: {docks_color};">{numdocksavailable}</span>
+                            </div>
+                        </div>
+                    </div>
+                """,
+                "style": {
+                    "backgroundColor": "rgba(255, 255, 255, 0.98)",
+                    "color": "#262730",
+                    "fontSize": "14px",
+                    "borderRadius": "8px",
+                    "padding": "12px 16px",
+                    "boxShadow": "0 4px 12px rgba(0, 0, 0, 0.15)",
+                    "border": "1px solid #E5E7EB"
+                },
             }
             view_state = pdk.ViewState(latitude=center_lat, longitude=center_lon, zoom=zoom_level)
             deck = pdk.Deck(layers=[layer], initial_view_state=view_state, tooltip=tooltip, map_style="light")
@@ -1115,7 +1158,23 @@ try:
         st.markdown('<h3 style="text-align: center; color: var(--text-primary); font-weight: 600; margin: 2rem 0 1rem 0;">Paris Vélib\' Network</h3>', unsafe_allow_html=True)
         
         # Prepare ALL stations as base layer
-        all_stations_map = df[['lat', 'lon', 'name', 'stationcode', 'numbikesavailable']].copy()
+        all_stations_map = df[['lat', 'lon', 'name', 'stationcode', 'numbikesavailable', 'numdocksavailable']].copy()
+        
+        # Add color codes for tooltips
+        def get_availability_color(value):
+            """Return hex color based on availability count"""
+            if pd.isna(value):
+                return "#6B7280"  # Gray for unknown
+            val = int(value)
+            if val >= 5:
+                return "#5DBB63"  # Green
+            elif val >= 1:
+                return "#F39C12"  # Orange
+            else:
+                return "#E74C3C"  # Red
+        
+        all_stations_map["bikes_color"] = all_stations_map["numbikesavailable"].apply(get_availability_color)
+        all_stations_map["docks_color"] = all_stations_map["numdocksavailable"].apply(get_availability_color)
         
         # Check if we have a planned route
         route_info = st.session_state.get('route_data', None)
@@ -1149,8 +1208,30 @@ try:
             )
             
             tooltip = {
-                "html": "<b>{name}</b><br/>Code: {stationcode}<br/>Bikes: {numbikesavailable}",
-                "style": {"backgroundColor": "steelblue", "color": "white"}
+                "html": """
+                    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+                        <div style="font-size: 15px; font-weight: 600; margin-bottom: 8px; color: #5DBB63;">{name}</div>
+                        <div style="font-size: 13px; line-height: 1.6;">
+                            <div style="display: flex; justify-content: space-between; margin: 4px 0;">
+                                <span style="color: #9CA3AF;">🚲 Bikes:</span>
+                                <span style="font-weight: 600; color: {bikes_color};">{numbikesavailable}</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; margin: 4px 0;">
+                                <span style="color: #9CA3AF;">🅿️ Docks:</span>
+                                <span style="font-weight: 600; color: {docks_color};">{numdocksavailable}</span>
+                            </div>
+                        </div>
+                    </div>
+                """,
+                "style": {
+                    "backgroundColor": "rgba(255, 255, 255, 0.98)",
+                    "color": "#262730",
+                    "fontSize": "14px",
+                    "borderRadius": "8px",
+                    "padding": "12px 16px",
+                    "boxShadow": "0 4px 12px rgba(0, 0, 0, 0.15)",
+                    "border": "1px solid #E5E7EB"
+                },
             }
             
         else:
@@ -1177,8 +1258,24 @@ try:
                 'type': ['start', 'start_station', 'end_station', 'destination'],
                 'name': ['Your location', start_station['name'], end_station['name'], 'Destination'],
                 'stationcode': ['', start_station.get('stationcode', ''), end_station.get('stationcode', ''), ''],
-                'numbikesavailable': [0, start_station.get('numbikesavailable', 0), end_station.get('numbikesavailable', 0), 0]
+                'numbikesavailable': [0, start_station.get('numbikesavailable', 0), end_station.get('numbikesavailable', 0), 0],
+                'numdocksavailable': [0, start_station.get('numdocksavailable', 0), end_station.get('numdocksavailable', 0), 0]
             })
+            
+            # Add color codes for route point tooltips
+            def get_color_for_value(val):
+                if pd.isna(val):
+                    return "#6B7280"
+                v = int(val)
+                if v >= 5:
+                    return "#5DBB63"
+                elif v >= 1:
+                    return "#F39C12"
+                else:
+                    return "#E74C3C"
+            
+            route_points["bikes_color"] = route_points["numbikesavailable"].apply(get_color_for_value)
+            route_points["docks_color"] = route_points["numdocksavailable"].apply(get_color_for_value)
             
             # Color mapping for route points
             color_map = {
@@ -1202,8 +1299,30 @@ try:
             )
             
             tooltip = {
-                "html": "<b>{name}</b><br/>Type: {type}<br/>Code: {stationcode}",
-                "style": {"backgroundColor": "steelblue", "color": "white"}
+                "html": """
+                    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+                        <div style="font-size: 15px; font-weight: 600; margin-bottom: 8px; color: #5DBB63;">{name}</div>
+                        <div style="font-size: 13px; line-height: 1.6;">
+                            <div style="display: flex; justify-content: space-between; margin: 4px 0;">
+                                <span style="color: #9CA3AF;">🚲 Bikes:</span>
+                                <span style="font-weight: 600; color: {bikes_color};">{numbikesavailable}</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; margin: 4px 0;">
+                                <span style="color: #9CA3AF;">🅿️ Docks:</span>
+                                <span style="font-weight: 600; color: {docks_color};">{numdocksavailable}</span>
+                            </div>
+                        </div>
+                    </div>
+                """,
+                "style": {
+                    "backgroundColor": "rgba(255, 255, 255, 0.98)",
+                    "color": "#262730",
+                    "fontSize": "14px",
+                    "borderRadius": "8px",
+                    "padding": "12px 16px",
+                    "boxShadow": "0 4px 12px rgba(0, 0, 0, 0.15)",
+                    "border": "1px solid #E5E7EB"
+                },
             }
         
         # Create and display the map
@@ -1214,7 +1333,12 @@ try:
             get_color='color',
             get_radius='radius',
             pickable=True,
-            auto_highlight=True
+            auto_highlight=True,
+            get_line_color=[255, 255, 255, 200],  # White stroke for better definition
+            line_width_min_pixels=2,
+            stroked=True,
+            filled=True,
+            opacity=0.9
         )
         
         deck = pdk.Deck(
