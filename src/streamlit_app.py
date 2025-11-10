@@ -12,6 +12,75 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 API_BASE = os.environ.get("VELIB_API_BASE", "http://127.0.0.1:8000")
 
+# ============================================================
+# UTILITY FUNCTIONS - Moved to top for reusability
+# ============================================================
+
+def get_availability_color(value):
+    """
+    Return hex color based on availability count.
+    
+    Color scheme:
+    - Green (#5DBB63): 5+ available - good availability
+    - Orange (#F39C12): 1-4 available - low availability
+    - Red (#E74C3C): 0 available - no availability
+    - Gray (#6B7280): Unknown/NA
+    
+    Args:
+        value: Number of bikes or docks available
+        
+    Returns:
+        str: Hex color code
+    """
+    if pd.isna(value):
+        return "#6B7280"  # Gray for unknown
+    val = int(value)
+    if val >= 5:
+        return "#5DBB63"  # Green
+    elif val >= 1:
+        return "#F39C12"  # Orange
+    else:
+        return "#E74C3C"  # Red
+
+
+def pct_to_marker_color(row, metric_col="metric"):
+    """
+    Convert availability percentage to RGBA color for map markers.
+    
+    Args:
+        row: DataFrame row with capacity and metric columns
+        metric_col: Name of the column containing the availability metric
+        
+    Returns:
+        list: RGBA color array [R, G, B, A]
+    """
+    cap = row.get("capacity", 0)
+    if pd.isna(cap) or cap == 0:
+        return [44, 62, 80, 220]  # Dark gray (#2C3E50) for unknown
+    
+    v = float(row[metric_col])
+    if v < 0.3:
+        return [231, 76, 60, 220]  # Danger red (#E74C3C)
+    if v < 0.6:
+        return [243, 156, 18, 220]  # Warning amber (#F39C12)
+    return [93, 187, 99, 220]  # Success green (#5DBB63)
+
+
+def add_color_columns(df):
+    """
+    Add color columns for tooltips to DataFrame.
+    
+    Args:
+        df: DataFrame with numbikesavailable and numdocksavailable columns
+        
+    Returns:
+        DataFrame: Original DataFrame with added bikes_color and docks_color columns
+    """
+    df["bikes_color"] = df["numbikesavailable"].apply(get_availability_color)
+    df["docks_color"] = df["numdocksavailable"].apply(get_availability_color)
+    return df
+
+
 # Configure page
 st.set_page_config(
     page_title="Velib Trend — Paris Bike Predictions",
@@ -313,13 +382,27 @@ with st.sidebar:
 
 @st.cache_data(ttl=60)
 def load_data(validate: bool) -> pd.DataFrame:
+    """
+    Load station data from FastAPI backend with caching.
+    
+    Args:
+        validate: Whether to validate data types on the backend
+        
+    Returns:
+        DataFrame with station information, filtered for installed stations only
+        
+    Raises:
+        requests.HTTPError: If API request fails
+    """
     # Always fetch all stations
     params = {"all": "true"}
     if validate:
         params["validate"] = "true"
+    
     url = f"{API_BASE}/stations"
     r = requests.get(url, params=params, timeout=25)
     r.raise_for_status()
+    
     payload = r.json()
     records = payload.get("records", [])
     df = pd.DataFrame(records)
@@ -329,6 +412,7 @@ def load_data(validate: bool) -> pd.DataFrame:
     if "is_installed" in df.columns:
         df = df[df["is_installed"].isin(["OUI", True, "true", 1])].copy()
     
+    # Reorder columns for better readability
     preferred = [
         "stationcode",
         "name",
@@ -342,9 +426,13 @@ def load_data(validate: bool) -> pd.DataFrame:
         "duedate",
         "nom_arrondissement_communes",
     ]
+    
     if df.empty:
         return df
-    ordered = [c for c in preferred if c in df.columns] + [c for c in df.columns if c not in preferred]
+    
+    ordered = [c for c in preferred if c in df.columns] + [
+        c for c in df.columns if c not in preferred
+    ]
     return df[ordered]
 
 if refresh:
@@ -386,36 +474,11 @@ try:
         metric_col = "pct_bikes" if mode == "bike" else "pct_docks"
         df["metric"] = df[metric_col]
 
-        def pct_to_color(row):
-            """Convert availability percentage to color using professional palette"""
-            cap = row.get("capacity", 0)
-            if pd.isna(cap) or cap == 0:
-                return [44, 62, 80, 220]  # Dark gray (#2C3E50) for unknown
-            v = float(row["metric"])
-            if v < 0.3:
-                return [231, 76, 60, 220]  # Danger red (#E74C3C)
-            if v < 0.6:
-                return [243, 156, 18, 220]  # Warning amber (#F39C12)
-            return [93, 187, 99, 220]      # Success green (#5DBB63)
-
-        # Apply row-wise for clarity
-        df["color"] = df.apply(pct_to_color, axis=1)
+        # Apply row-wise color mapping for map markers
+        df["color"] = df.apply(pct_to_marker_color, axis=1)
 
         # Add color codes for tooltips (bikes and docks)
-        def get_availability_color(value):
-            """Return hex color based on availability count"""
-            if pd.isna(value):
-                return "#6B7280"  # Gray for unknown
-            val = int(value)
-            if val >= 5:
-                return "#5DBB63"  # Green
-            elif val >= 1:
-                return "#F39C12"  # Orange
-            else:
-                return "#E74C3C"  # Red
-        
-        df["bikes_color"] = df["numbikesavailable"].apply(get_availability_color)
-        df["docks_color"] = df["numdocksavailable"].apply(get_availability_color)
+        df = add_color_columns(df)
 
         df["lat"] = pd.to_numeric(df.get("lat"), errors="coerce")
         df["lon"] = pd.to_numeric(df.get("lon"), errors="coerce")
@@ -485,15 +548,15 @@ try:
                 data=map_df,
                 get_position="[lon, lat]",
                 get_fill_color="color",
-                get_radius=80,  # Larger base radius for better visibility
+                get_radius=95,  # Larger for modern, prominent look
                 pickable=True,
-                radius_min_pixels=6,  # Minimum size when zoomed out
-                radius_max_pixels=40,  # Maximum size when zoomed in
-                get_line_color=[255, 255, 255, 180],  # White stroke for definition
-                line_width_min_pixels=1.5,  # Subtle outline
+                radius_min_pixels=4,  # Bigger minimum for visibility when zoomed out
+                radius_max_pixels=20,  # Smaller max to avoid huge circles when zoomed in
+                get_line_color=[255, 255, 255, 255],  # Pure white outer ring (dual-ring effect)
+                line_width_min_pixels=1.8,  # Thinner border so color shows when zoomed out
                 stroked=True,
                 filled=True,
-                opacity=0.85,  # Slightly transparent for modern look
+                opacity=0.8,  # Higher opacity for solid, professional look
             )
             if mode == "bike":
                 metric_label = "Bikes"
@@ -1161,20 +1224,7 @@ try:
         all_stations_map = df[['lat', 'lon', 'name', 'stationcode', 'numbikesavailable', 'numdocksavailable']].copy()
         
         # Add color codes for tooltips
-        def get_availability_color(value):
-            """Return hex color based on availability count"""
-            if pd.isna(value):
-                return "#6B7280"  # Gray for unknown
-            val = int(value)
-            if val >= 5:
-                return "#5DBB63"  # Green
-            elif val >= 1:
-                return "#F39C12"  # Orange
-            else:
-                return "#E74C3C"  # Red
-        
-        all_stations_map["bikes_color"] = all_stations_map["numbikesavailable"].apply(get_availability_color)
-        all_stations_map["docks_color"] = all_stations_map["numdocksavailable"].apply(get_availability_color)
+        all_stations_map = add_color_columns(all_stations_map)
         
         # Check if we have a planned route
         route_info = st.session_state.get('route_data', None)
@@ -1194,7 +1244,7 @@ try:
                     return [255, 0, 0, 180]  # Red - no bikes
             
             all_stations_map['color'] = df.apply(get_station_color, axis=1).tolist()
-            all_stations_map['radius'] = 50
+            all_stations_map['radius'] = 95  # Same as Explore Map - meters, auto-scales
             all_stations_map['type'] = 'station'
             
             map_data = all_stations_map
@@ -1241,7 +1291,7 @@ try:
             # Background stations (gray, small, semi-transparent)
             all_stations_map['type'] = 'background'
             all_stations_map['color'] = [[180, 180, 180, 80]] * len(all_stations_map)  # Gray, semi-transparent
-            all_stations_map['radius'] = 40  # Small circles
+            all_stations_map['radius'] = 60  # Small circles (in meters, auto-scales with zoom)
             
             # Extract route info from session_state
             start_lat = route_info['start_lat']
@@ -1262,30 +1312,18 @@ try:
                 'numdocksavailable': [0, start_station.get('numdocksavailable', 0), end_station.get('numdocksavailable', 0), 0]
             })
             
-            # Add color codes for route point tooltips
-            def get_color_for_value(val):
-                if pd.isna(val):
-                    return "#6B7280"
-                v = int(val)
-                if v >= 5:
-                    return "#5DBB63"
-                elif v >= 1:
-                    return "#F39C12"
-                else:
-                    return "#E74C3C"
-            
-            route_points["bikes_color"] = route_points["numbikesavailable"].apply(get_color_for_value)
-            route_points["docks_color"] = route_points["numdocksavailable"].apply(get_color_for_value)
+            # Add color codes for route point tooltips (reuse utility function)
+            route_points = add_color_columns(route_points)
             
             # Color mapping for route points
             color_map = {
-                'start': [255, 0, 0, 200],  # Red
+                'start': [255, 0, 0, 235],  # Red - higher opacity
                 'start_station': [0, 200, 0, 255],  # Bright green
                 'end_station': [0, 100, 255, 255],  # Bright blue
-                'destination': [255, 0, 0, 200]  # Red
+                'destination': [255, 0, 0, 235]  # Red - higher opacity
             }
             route_points['color'] = route_points['type'].map(color_map)
-            route_points['radius'] = 150  # Large circles
+            route_points['radius'] = 120  # Larger circles for prominence (in meters, auto-scales)
             
             # Combine: ALL stations (background) + route points (foreground)
             map_data = pd.concat([all_stations_map, route_points], ignore_index=True)
@@ -1331,14 +1369,16 @@ try:
             data=map_data,
             get_position='[lon, lat]',
             get_color='color',
-            get_radius='radius',
+            get_radius='radius',  # Radius in meters (from dataframe), auto-scales with zoom
             pickable=True,
             auto_highlight=True,
-            get_line_color=[255, 255, 255, 200],  # White stroke for better definition
-            line_width_min_pixels=2,
+            radius_min_pixels=4,  # Same as Explore Map - minimum visibility when zoomed out
+            radius_max_pixels=20,  # Same as Explore Map - avoid huge circles when zoomed in
+            get_line_color=[255, 255, 255, 255],  # Pure white outer ring
+            line_width_min_pixels=1.8,  # Same as Explore Map - thin border
             stroked=True,
             filled=True,
-            opacity=0.9
+            opacity=0.8  # Same as Explore Map - solid, professional look
         )
         
         deck = pdk.Deck(
