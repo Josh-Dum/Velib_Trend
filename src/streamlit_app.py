@@ -470,7 +470,7 @@ try:
             try:
                 # Step 1: Geocode addresses with progress
                 progress_text = st.empty()
-                progress_text.info("🌍 Step 1/4: Finding locations...")
+                progress_text.info("🔎 Finding your locations… (~1s)")
                 
                 start_lat, start_lon = geocode_address(start_address)
                 dest_lat, dest_lon = geocode_address(dest_address)
@@ -483,15 +483,15 @@ try:
                         st.error(f"❌ Could not find location: '{dest_address}'")
                     st.info("💡 **Tip:** Try being more specific (add 'Paris' or postal code like '75001')")
                 else:
-                    progress_text.success("✅ Step 1/4: Locations found!")
+                    progress_text.success("✅ Locations found")
                     
                     # Step 2: Plan route
-                    progress_text.info("🚴 Step 2/4: Finding best stations and calculating route...")
+                    progress_text.info("Calculating best stations… (~1s)")
                     route = plan_route(start_lat, start_lon, dest_lat, dest_lon, df)
                     
                     start_station = route['start_station']
                     end_station = route['end_station']
-                    progress_text.success("✅ Step 2/4: Route calculated!")
+                    progress_text.success("✅ Route ready")
                     
                     # Store route data in session state for map display
                     st.session_state['route_data'] = {
@@ -511,7 +511,7 @@ try:
                         st.info(f"🚴 **Suggested Station:** {start_station['name']}")
                     else:
                         # Step 3: Get predictions in parallel
-                        progress_text.info("🔮 Step 3/4: Getting ML predictions from AWS SageMaker... (may take 20-30s on first request)")
+                        progress_text.info("🔮 Fetching availability predictions… (~15-30s)")
                         try:
                             # Use ThreadPoolExecutor to run both predictions simultaneously
                             with ThreadPoolExecutor(max_workers=2) as executor:
@@ -532,16 +532,16 @@ try:
                                 start_pred = future_start.result()
                                 end_pred = future_end.result()
                             
-                            progress_text.success("✅ Step 3/4: Predictions received!")
+                            progress_text.success("✅ Predictions received")
                             
                             # Step 4: Get verdict
-                            progress_text.info("🎯 Step 4/4: Analyzing your journey...")
+                            progress_text.info("🎯 Reviewing journey confidence… (~1s)")
                             verdict = get_journey_verdict(
                                 start_pred['bikes_predicted'],
                                 end_pred['docks_predicted']
                             )
                             
-                            progress_text.success("✅ Step 4/4: Journey analysis complete!")
+                            progress_text.success("✅ Journey analysis complete")
                             time.sleep(0.5)  # Brief pause to show completion
                             progress_text.empty()
                         
@@ -557,11 +557,11 @@ try:
                             st.markdown("### ⏱️ Journey Breakdown")
                             col1, col2, col3, col4 = st.columns(4)
                             with col1:
-                                st.metric("🚶 Walk to Start", f"{route['walk_to_start_min']:.0f} min", f"{route['walk_to_start_km']:.2f} km")
+                                st.metric("🚶 Walk to Start", f"{route['walk_to_start_min']:.0f} min")
                             with col2:
-                                st.metric("🚴 Bike Ride", f"{route['bike_time_min']:.0f} min", f"{route['bike_distance_km']:.2f} km")
+                                st.metric("🚴 Bike Ride", f"{route['bike_time_min']:.0f} min")
                             with col3:
-                                st.metric("🚶 Walk to Dest", f"{route['walk_from_end_min']:.0f} min", f"{route['walk_from_end_km']:.2f} km")
+                                st.metric("🚶 Walk to Dest", f"{route['walk_from_end_min']:.0f} min")
                             with col4:
                                 st.metric("⏱️ Total Time", f"{route['total_time_min']:.0f} min")
                             
@@ -613,11 +613,11 @@ try:
                             st.markdown("#### ⏱️ Journey Timeline")
                             col1, col2, col3, col4 = st.columns(4)
                             with col1:
-                                st.metric("🚶 Walk to Start", f"{route['walk_to_start_min']:.0f} min", f"{route['walk_to_start_km']:.2f} km")
+                                st.metric("🚶 Walk to Start", f"{route['walk_to_start_min']:.0f} min")
                             with col2:
-                                st.metric("🚴 Bike Ride", f"{route['bike_time_min']:.0f} min", f"{route['bike_distance_km']:.2f} km")
+                                st.metric("🚴 Bike Ride", f"{route['bike_time_min']:.0f} min")
                             with col3:
-                                st.metric("🚶 Walk to Dest", f"{route['walk_from_end_min']:.0f} min", f"{route['walk_from_end_km']:.2f} km")
+                                st.metric("🚶 Walk to Dest", f"{route['walk_from_end_min']:.0f} min")
                             with col4:
                                 st.metric("⏱️ Total Time", f"{route['total_time_min']:.0f} min", help="Total journey time including all segments")
                             
@@ -625,35 +625,30 @@ try:
                             col_stations = st.columns(2)
                             with col_stations[0]:
                                 st.markdown("#### 🚲 Pickup Station")
-                                confidence_emoji = "🟢" if start_pred['confidence'] == 'high' else "🟡" if start_pred['confidence'] == 'medium' else "🟠"
                                 st.markdown(f"""
                                 <div style="background: #f0f2f6; padding: 1rem; border-radius: 8px; border-left: 4px solid #667eea;">
                                     <strong style="font-size: 1.1rem;">{start_station['name']}</strong><br>
                                     <span style="color: #666; font-size: 0.9rem;">📍 {route['walk_to_start_km']*1000:.0f}m from start ({route['walk_to_start_min']:.0f} min walk)</span><br>
                                     <br>
                                     <strong>🔮 Predicted in {route['arrival_at_start_min']:.0f} min:</strong><br>
-                                    <span style="font-size: 1.4rem; color: #667eea;">~{start_pred['bikes_predicted']:.0f} bikes</span><br>
-                                    <span style="font-size: 0.9rem;">{confidence_emoji} {start_pred['confidence'].title()} confidence</span>
+                                    <span style="font-size: 1.4rem; color: #667eea;">~{start_pred['bikes_predicted']:.0f} bikes</span>
                                 </div>
                                 """, unsafe_allow_html=True)
                             
                             with col_stations[1]:
                                 st.markdown("#### 🅿️ Return Station")
-                                confidence_emoji = "🟢" if end_pred['confidence'] == 'high' else "🟡" if end_pred['confidence'] == 'medium' else "🟠"
                                 st.markdown(f"""
                                 <div style="background: #f0f2f6; padding: 1rem; border-radius: 8px; border-left: 4px solid #764ba2;">
                                     <strong style="font-size: 1.1rem;">{end_station['name']}</strong><br>
                                     <span style="color: #666; font-size: 0.9rem;">📍 {route['walk_from_end_km']*1000:.0f}m from destination ({route['walk_from_end_min']:.0f} min walk)</span><br>
                                     <br>
                                     <strong>🔮 Predicted in {route['arrival_at_end_min']:.0f} min:</strong><br>
-                                    <span style="font-size: 1.4rem; color: #764ba2;">~{end_pred['docks_predicted']:.0f} docks</span><br>
-                                    <span style="font-size: 0.9rem;">{confidence_emoji} {end_pred['confidence'].title()} confidence</span>
+                                    <span style="font-size: 1.4rem; color: #764ba2;">~{end_pred['docks_predicted']:.0f} docks</span>
                                 </div>
                                 """, unsafe_allow_html=True)
                             
                             # Google Maps integration button
                             st.markdown("---")
-                            st.markdown("#### 🗺️ Navigate with Google Maps")
                             
                             # Create Google Maps URL with waypoints (API format)
                             origin_coords = f"{start_lat},{start_lon}"
@@ -672,19 +667,19 @@ try:
                             
                             # Display button with description
                             st.markdown(f"""
-                            <a href="{google_maps_url}" target="_blank" style="text-decoration: none;">
-                                <div style="background: linear-gradient(135deg, #4285f4 0%, #34a853 100%); 
-                                            color: white; padding: 1rem 1.5rem; border-radius: 8px; 
-                                            text-align: center; font-weight: 600; font-size: 1.1rem;
-                                            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-                                            transition: transform 0.2s;">
-                                    🗺️ Open Route in Google Maps
-                                </div>
-                            </a>
+                            <div style="text-align: center;">
+                                <a href="{google_maps_url}" target="_blank" style="text-decoration: none; display: inline-block;">
+                                    <div style="display: inline-flex; align-items: center; gap: 0.85rem; background: linear-gradient(135deg, #4285f4 0%, #34a853 100%);
+                                                color: white; padding: 0.85rem 1.8rem; border-radius: 10px;
+                                                font-weight: 600; font-size: 1.05rem; box-shadow: 0 6px 12px rgba(0,0,0,0.12);
+                                                transition: transform 0.2s ease, box-shadow 0.2s ease;">
+                                        <img src="https://upload.wikimedia.org/wikipedia/commons/a/aa/Google_Maps_icon_%282020%29.svg" alt="Google Maps" width="28" height="28" style="background: white; border-radius: 50%; padding: 2px; box-shadow: 0 0 0 1px rgba(0,0,0,0.08);">
+                                        <span>Open Route in Google Maps</span>
+                                    </div>
+                                </a>
+                            </div>
                             """, unsafe_allow_html=True)
-                            
-                            st.caption("📍 Opens in Google Maps with bicycling mode. Adjust first/last segments to walking if needed.")
-            
+                                        
             except Exception as e:
                 import traceback
                 st.error(f"❌ Error planning journey: {str(e)}")
