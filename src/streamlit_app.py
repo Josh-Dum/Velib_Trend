@@ -19,128 +19,275 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for improved UI
+# ============================================================
+# DESIGN SYSTEM - Professional Light Theme
+# ============================================================
+# Primary: #5DBB63 (Vélib green - brand color)
+# Accent: #3498DB (Bright blue - interactive elements)
+# Warning: #F39C12 (Amber - medium availability)
+# Danger: #E74C3C (Red - low availability)
+# Background: #FFFFFF (white), #F0F2F6 (light gray cards)
+# Text: #262730 (dark gray), #6B7280 (secondary gray)
+# ============================================================
+
+# Custom CSS for professional light theme
 st.markdown("""
 <style>
-    /* Main title styling */
-    .main-title {
-        font-size: 3rem;
-        font-weight: 700;
-        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        margin-bottom: 0.5rem;
+    /* ========== LIGHT THEME COLORS ========== */
+    :root {
+        /* Brand colors */
+        --primary-green: #5DBB63;
+        --primary-green-dark: #4A9D50;
+        --accent-blue: #3498DB;
+        --accent-blue-dark: #2980B9;
+        --warning-amber: #F39C12;
+        --danger-red: #E74C3C;
+        
+        /* Backgrounds - Light theme */
+        --bg-main: #FFFFFF;
+        --bg-card: #F0F2F6;
+        --bg-hover: #E5E7EB;
+        
+        /* Text - Light theme */
+        --text-primary: #262730;
+        --text-secondary: #6B7280;
+        
+        /* Borders - Light theme */
+        --border-color: #E5E7EB;
     }
     
-    /* Section headers */
+    /* ========== MAIN TITLE ========== */
+    .main-title {
+        font-size: 2.8rem;
+        font-weight: 700;
+        color: var(--primary-green) !important;
+        margin-bottom: 0.3rem;
+        letter-spacing: -0.5px;
+    }
+    
+    .subtitle {
+        font-size: 1.1rem;
+        color: var(--text-secondary) !important;
+        font-weight: 400;
+        margin-bottom: 1.5rem;
+    }
+    
+    /* ========== SECTION HEADERS ========== */
     .section-header {
-        font-size: 1.8rem;
+        font-size: 1.5rem;
         font-weight: 600;
-        color: #1f1f1f;
+        color: var(--text-primary) !important;
         margin-top: 2rem;
         margin-bottom: 1rem;
-        border-bottom: 2px solid #667eea;
-        padding-bottom: 0.5rem;
+        border-left: 4px solid var(--primary-green);
+        padding-left: 1rem;
     }
     
-    /* Station card styling */
-    .station-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    /* ========== CARDS & CONTAINERS ========== */
+    .info-card {
+        background: var(--bg-card);
+        border: 1px solid var(--border-color);
+        border-left: 4px solid var(--accent-blue);
+        padding: 1.2rem;
+        border-radius: 8px;
+        margin: 1rem 0;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    
+    .info-card * {
+        color: var(--text-primary) !important;
+    }
+    
+    .info-card strong {
+        color: var(--primary-green) !important;
+        font-weight: 600;
+    }
+    
+    .info-card ul, .info-card li {
+        color: var(--text-secondary) !important;
+    }
+    
+    .success-banner {
+        background: linear-gradient(135deg, #5DBB63 0%, #4A9D50 100%);
         color: white;
         padding: 1.5rem;
-        border-radius: 10px;
+        border-radius: 8px;
         margin: 1rem 0;
     }
     
-    /* Metric cards */
+    .warning-banner {
+        background: linear-gradient(135deg, #F39C12 0%, #E67E22 100%);
+        color: white;
+        padding: 1.5rem;
+        border-radius: 8px;
+        margin: 1rem 0;
+    }
+    
+    .danger-banner {
+        background: linear-gradient(135deg, #E74C3C 0%, #C0392B 100%);
+        color: white;
+        padding: 1.5rem;
+        border-radius: 8px;
+        margin: 1rem 0;
+    }
+    
+    /* ========== METRICS ========== */
     [data-testid="stMetricValue"] {
         font-size: 1.8rem;
         font-weight: 600;
+        color: var(--text-primary) !important;
     }
     
-    /* Better button styling */
+    [data-testid="stMetricLabel"] {
+        color: var(--text-secondary) !important;
+        font-size: 0.9rem;
+    }
+    
+    /* ========== BUTTONS ========== */
     .stButton>button {
-        width: 100%;
-        border-radius: 8px;
+        background-color: var(--accent-blue);
+        color: white;
+        border: none;
+        border-radius: 6px;
         font-weight: 600;
-        padding: 0.6rem 1.2rem;
-        transition: all 0.3s ease;
+        padding: 0.6rem 1.5rem;
+        transition: all 0.2s ease;
     }
     
     .stButton>button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        background-color: var(--accent-blue-dark);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 8px rgba(52, 152, 219, 0.3);
     }
     
-    /* Info boxes */
-    .info-box {
-        background: #f0f2f6;
-        border-left: 4px solid #667eea;
-        padding: 1rem;
-        border-radius: 4px;
-        margin: 1rem 0;
+    /* ========== SIDEBAR ========== */
+    [data-testid="stSidebar"] {
+        background-color: var(--bg-card) !important;
+        border-right: 1px solid var(--border-color);
+    }
+    
+    [data-testid="stSidebar"] * {
+        color: var(--text-primary) !important;
+    }
+    
+    [data-testid="stSidebar"] h1,
+    [data-testid="stSidebar"] h2,
+    [data-testid="stSidebar"] h3,
+    [data-testid="stSidebar"] h4 {
+        color: var(--primary-green) !important;
+        font-weight: 600 !important;
+    }
+    
+    [data-testid="stSidebar"] label {
+        color: var(--text-primary) !important;
+    }
+    
+    [data-testid="stSidebar"] p {
+        color: var(--text-secondary) !important;
+    }
+    
+    /* ========== DIVIDERS ========== */
+    hr {
+        border: none;
+        border-top: 1px solid var(--border-color);
+        margin: 1.5rem 0;
+    }
+    
+    /* ========== FORM INPUTS ========== */
+    label[data-testid="stWidgetLabel"] {
+        color: var(--text-primary) !important;
+        font-weight: 500 !important;
+        font-size: 0.95rem !important;
+    }
+    
+    input[type="text"] {
+        border: 1px solid var(--border-color) !important;
+        border-radius: 6px !important;
+    }
+    
+    input[type="text"]:focus {
+        border-color: var(--primary-green) !important;
+        box-shadow: 0 0 0 2px rgba(93, 187, 99, 0.2) !important;
+        outline: none !important;
+    }
+    
+    textarea:focus {
+        border-color: var(--primary-green) !important;
+        box-shadow: 0 0 0 2px rgba(93, 187, 99, 0.2) !important;
+        outline: none !important;
+    }
+    
+    /* ========== MARKDOWN HEADERS ========== */
+    h4, h5, h6 {
+        color: var(--text-primary) !important;
+        font-weight: 600 !important;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# Header with gradient
-st.markdown('<h1 class="main-title">🚴 Velib Trend</h1>', unsafe_allow_html=True)
-st.markdown("**Real-time availability & AI-powered predictions for Paris bike-sharing**")
+# Header - clean and professional
+st.markdown('<h1 class="main-title">Velib Trend</h1>', unsafe_allow_html=True)
+st.markdown('<p class="subtitle">Real-time availability & AI-powered predictions for Paris bike-sharing</p>', unsafe_allow_html=True)
 st.markdown("---")
 
 # Sidebar with page navigation
 with st.sidebar:
-    st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/4/4b/V%C3%A9lib%27_logo.svg/320px-V%C3%A9lib%27_logo.svg.png", width=150)
+    # Clean logo section
+    st.markdown("### Velib Trend")
+    st.markdown("Paris Bike-Sharing Intelligence")
+    st.markdown("---")
     
-    st.markdown("### 🗺️ Navigation")
+    # Navigation
+    st.markdown("#### Navigation")
     page = st.radio(
         "Choose a feature:",
-        ["🚴 Plan Journey", "🗺️ Explore Map"],
-        key="page_selector"
+        ["Plan Journey", "Explore Map"],
+        key="page_selector",
+        label_visibility="collapsed"
     )
     
     st.markdown("---")
     
     # Mode selection (only show for Explore Map)
-    if page == "🗺️ Explore Map":
-        st.markdown("### 🔍 Display Mode")
+    if page == "Explore Map":
+        st.markdown("#### Display Mode")
         if "mode" not in st.session_state:
             st.session_state.mode = "bike"
         mode = st.radio(
             "What are you looking for?",
             ["bike", "dock"],
-            format_func=lambda x: "🚴 Find a bike" if x == "bike" else "🅿️ Find a dock",
-            key="mode_selector"
+            format_func=lambda x: "Find a bike to rent" if x == "bike" else "Find a dock to return",
+            key="mode_selector",
+            label_visibility="collapsed"
         )
         st.session_state.mode = mode
         
         st.markdown("---")
         
         # Collapsible advanced options
-        with st.expander("⚙️ Advanced Options"):
+        with st.expander("Advanced Options"):
             validate = st.checkbox("Validate data types", value=True, help="Ensures data quality but may be slower")
-            refresh = st.button("🔄 Refresh data", help="Clear cache and reload fresh data")
+            refresh = st.button("Refresh data", help="Clear cache and reload fresh data")
     else:
         # Journey Planner page - set defaults
         validate = True
         refresh = False
     
     st.markdown("---")
-    st.markdown("### 📊 About This App")
+    st.markdown("#### About This App")
     st.markdown("""
-    <div style='font-size: 0.85rem; line-height: 1.6;'>
-    ✨ ML predictions powered by <b>LSTM neural network</b><br>
-    📡 Data updates <b>hourly</b> via AWS Lambda<br>
-    🎯 Model accuracy: <b>R²=0.815</b> @ T+1h<br>
-    📍 Tracking <b>1,498 stations</b> across Paris
+    <div style='font-size: 0.85rem; line-height: 1.8; color: #6B7280;'>
+    <b>ML Predictions:</b> LSTM neural network<br>
+    <b>Data Updates:</b> Hourly via AWS Lambda<br>
+    <b>Model Accuracy:</b> R²=0.815 @ T+1h<br>
+    <b>Coverage:</b> 1,498 stations across Paris
     </div>
     """, unsafe_allow_html=True)
     
     st.markdown("---")
     st.markdown("""
-    <div style='text-align: center; font-size: 0.75rem; color: #666;'>
-    Made with ❤️ using Streamlit & AWS<br>
-    © 2025 Paris Pulse Project
+    <div style='text-align: center; font-size: 0.75rem; color: #9CA3AF;'>
+    Built with Streamlit & AWS | © 2025 Velib Trend
     </div>
     """, unsafe_allow_html=True)
 
@@ -194,7 +341,7 @@ df = st.session_state['cached_df']
 
 # ==================== PAGE ROUTING ====================
 try:
-    if page == "🗺️ Explore Map":
+    if page == "Explore Map":
         # ==================== EXPLORE MAP PAGE ====================
         # Simple color-coded circles (fixed radius) by availability percentage (bike or dock mode)
         if not df.empty:
@@ -220,15 +367,16 @@ try:
         df["metric"] = df[metric_col]
 
         def pct_to_color(row):
+            """Convert availability percentage to color using professional palette"""
             cap = row.get("capacity", 0)
             if pd.isna(cap) or cap == 0:
-                return [0, 0, 0, 220]  # black
+                return [44, 62, 80, 220]  # Dark gray (#2C3E50) for unknown
             v = float(row["metric"])
             if v < 0.3:
-                return [230, 57, 70, 220]  # red
+                return [231, 76, 60, 220]  # Danger red (#E74C3C)
             if v < 0.6:
-                return [253, 180, 70, 220]  # orange-ish
-            return [70, 160, 60, 220]      # green
+                return [243, 156, 18, 220]  # Warning amber (#F39C12)
+            return [93, 187, 99, 220]      # Success green (#5DBB63)
 
         # Apply row-wise for clarity
         df["color"] = df.apply(pct_to_color, axis=1)
@@ -240,7 +388,7 @@ try:
         # ============================================================
         # SEARCH BAR AT THE TOP (PROMINENT)
         # ============================================================
-        st.markdown('<div class="section-header">🔍 Find a Station</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-header">Find a Station</div>', unsafe_allow_html=True)
         
         # Create searchable options with station name and code
         station_options = {}
@@ -269,7 +417,7 @@ try:
         with col_help:
             st.markdown("") # Spacing
             st.markdown("") # Spacing
-            with st.expander("💡 Help"):
+            with st.expander("Help"):
                 st.markdown("""
                 **Search Tips:**
                 - Type any part of the station name
@@ -312,7 +460,7 @@ try:
                 metric_label = "Docks"
             tooltip = {
                 "html": "<b>{name}</b><br/>Station: {stationcode}<br/>Bikes: {numbikesavailable}<br/>Docks: {numdocksavailable}",
-                "style": {"backgroundColor": "#1E1E1E", "color": "white"},
+                "style": {"backgroundColor": "#262730", "color": "white", "fontSize": "14px", "borderRadius": "4px"},
             }
             view_state = pdk.ViewState(latitude=center_lat, longitude=center_lon, zoom=zoom_level)
             deck = pdk.Deck(layers=[layer], initial_view_state=view_state, tooltip=tooltip, map_style="light")
@@ -321,26 +469,26 @@ try:
             st.pydeck_chart(deck, use_container_width=True)
             
             # Collapsible legend and stats
-            with st.expander("ℹ️ Map Legend & Statistics"):
+            with st.expander("Map Legend & Statistics"):
                 col_legend, col_stats = st.columns([1, 2])
                 with col_legend:
                     st.markdown("#### Color Code")
                     if mode == "bike":
                         st.markdown("""
-<div style='line-height:1.4'>
-<span style='display:inline-block;width:12px;height:12px;background:#46A03C;border-radius:50%;margin-right:6px;'></span> ≥ 60% bikes<br>
-<span style='display:inline-block;width:12px;height:12px;background:#FDB446;border-radius:50%;margin-right:6px;'></span> 30–59% bikes<br>
-<span style='display:inline-block;width:12px;height:12px;background:#E63946;border-radius:50%;margin-right:6px;'></span> < 30% bikes<br>
-<span style='display:inline-block;width:12px;height:12px;background:#000;border-radius:50%;margin-right:6px;'></span> Unknown
+<div style='line-height:1.8'>
+<span style='display:inline-block;width:14px;height:14px;background:#5DBB63;border-radius:50%;margin-right:8px;'></span> ≥ 60% bikes available<br>
+<span style='display:inline-block;width:14px;height:14px;background:#F39C12;border-radius:50%;margin-right:8px;'></span> 30–59% bikes available<br>
+<span style='display:inline-block;width:14px;height:14px;background:#E74C3C;border-radius:50%;margin-right:8px;'></span> < 30% bikes available<br>
+<span style='display:inline-block;width:14px;height:14px;background:#2C3E50;border-radius:50%;margin-right:8px;'></span> No data
 </div>
 """, unsafe_allow_html=True)
                     else:
                         st.markdown("""
-<div style='line-height:1.4'>
-<span style='display:inline-block;width:12px;height:12px;background:#46A03C;border-radius:50%;margin-right:6px;'></span> ≥ 60% docks free<br>
-<span style='display:inline-block;width:12px;height:12px;background:#FDB446;border-radius:50%;margin-right:6px;'></span> 30–59% docks free<br>
-<span style='display:inline-block;width:12px;height:12px;background:#E63946;border-radius:50%;margin-right:6px;'></span> < 30% docks free<br>
-<span style='display:inline-block;width:12px;height:12px;background:#000;border-radius:50%;margin-right:6px;'></span> Unknown
+<div style='line-height:1.8'>
+<span style='display:inline-block;width:14px;height:14px;background:#5DBB63;border-radius:50%;margin-right:8px;'></span> ≥ 60% docks free<br>
+<span style='display:inline-block;width:14px;height:14px;background:#F39C12;border-radius:50%;margin-right:8px;'></span> 30–59% docks free<br>
+<span style='display:inline-block;width:14px;height:14px;background:#E74C3C;border-radius:50%;margin-right:8px;'></span> < 30% docks free<br>
+<span style='display:inline-block;width:14px;height:14px;background:#2C3E50;border-radius:50%;margin-right:8px;'></span> No data
 </div>
 """, unsafe_allow_html=True)
                 
@@ -458,12 +606,12 @@ try:
                                         y=hist_bikes,
                                         mode='lines+markers',
                                         name='Historical (24h)',
-                                        line=dict(color='#1f77b4', width=2.5, shape='spline'),
-                                        marker=dict(size=5, color='#1f77b4'),
+                                        line=dict(color='#2C3E50', width=2.5, shape='spline'),
+                                        marker=dict(size=5, color='#2C3E50'),
                                         hovertemplate='<b>%{x|%H:%M}</b><br>Bikes: %{y}<extra></extra>'
                                     ))
                                 elif hist_times:
-                                    st.warning(f"⚠️ Invalid historical time data types detected")
+                                    st.warning("⚠️ Invalid historical time data types detected")
                                 
                                 # Add predictions if available
                                 if predictions_dict:
@@ -522,7 +670,7 @@ try:
                                                 y=connect_bikes,
                                                 mode='lines',
                                                 name='Connection',
-                                                line=dict(color='#999999', width=2, dash='dot', shape='spline'),
+                                                line=dict(color='#BDC3C7', width=2, dash='dot', shape='spline'),
                                                 showlegend=False,
                                                 hoverinfo='skip'
                                             ))
@@ -533,8 +681,8 @@ try:
                                             y=pred_bikes,
                                             mode='lines+markers',
                                             name='AI Predictions',
-                                            line=dict(color='#ff7f0e', width=3, shape='spline'),
-                                            marker=dict(size=10, symbol='diamond', color='#ff7f0e'),
+                                            line=dict(color='#3498DB', width=3, shape='spline'),
+                                            marker=dict(size=10, symbol='diamond', color='#3498DB'),
                                             hovertemplate='<b>%{x|%H:%M}</b><br>Predicted: %{y} bikes<extra></extra>'
                                         ))
                                     elif pred_times:
@@ -662,7 +810,7 @@ try:
                             st.code(traceback.format_exc())
 
     # ==================== JOURNEY PLANNER PAGE ====================
-    elif page == "🚴 Plan Journey":
+    elif page == "Plan Journey":
         from journey_planner import (
             geocode_address,
             plan_route,
@@ -670,10 +818,10 @@ try:
             get_journey_verdict
         )
         
-        st.markdown('<div class="section-header">🚴 Plan Your Journey</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-header">Plan Your Journey</div>', unsafe_allow_html=True)
         st.markdown("""
-        <div class="info-box">
-        <strong>🎯 How it works:</strong> Enter your start and destination, and our AI will:
+        <div class="info-card">
+        <strong>How it works:</strong> Enter your start and destination, and our AI will:
         <ul style="margin-top: 0.5rem; margin-bottom: 0;">
             <li>Find the nearest Vélib' stations</li>
             <li>Predict bike/dock availability when you arrive</li>
@@ -683,17 +831,17 @@ try:
         """, unsafe_allow_html=True)
         
         # Input form with better design
-        st.markdown("#### 📍 Journey Details")
+        st.markdown("#### Journey Details")
         col1, col2 = st.columns(2)
         with col1:
             start_address = st.text_input(
-                "📍 From (start location)",
+                "From (start location)",
                 placeholder="e.g., 24 Rue de Rivoli, Paris",
                 help="Enter your starting address - be as specific as possible"
             )
         with col2:
             dest_address = st.text_input(
-                "🎯 To (destination)",
+                "To (destination)",
                 placeholder="e.g., Gare du Nord, Paris",
                 help="Enter your destination address - be as specific as possible"
             )
@@ -703,7 +851,7 @@ try:
         # Plan route button with better styling
         col_btn, col_spacer = st.columns([2, 3])
         with col_btn:
-            plan_button = st.button("🔍 Plan My Route", type="primary", use_container_width=True)
+            plan_button = st.button("Plan My Route", type="primary", use_container_width=True)
         
         # Initialize route state in session_state
         if 'route_data' not in st.session_state:
@@ -841,18 +989,18 @@ try:
                             # Display results (only if predictions succeeded)
                             if verdict is not None:
                                 st.markdown("---")
-                                st.markdown('<div class="section-header">📊 Your Journey Plan</div>', unsafe_allow_html=True)
+                                st.markdown('<div class="section-header">Your Journey Plan</div>', unsafe_allow_html=True)
                                 
-                                # Verdict banner with gradient styling
+                                # Verdict banner with new design system colors
                                 if verdict['status'] == 'success':
-                                    banner_color = "linear-gradient(135deg, #667eea 0%, #764ba2 100%)"
+                                    banner_class = "success-banner"
                                 elif verdict['status'] == 'warning':
-                                    banner_color = "linear-gradient(135deg, #f093fb 0%, #f5576c 100%)"
+                                    banner_class = "warning-banner"
                                 else:
-                                    banner_color = "linear-gradient(135deg, #fa709a 0%, #fee140 100%)"
+                                    banner_class = "danger-banner"
                                 
                                 st.markdown(f"""
-                                <div style="background: {banner_color}; color: white; padding: 1.5rem; border-radius: 10px; margin: 1rem 0;">
+                                <div class="{banner_class}">
                                     <h3 style="margin: 0; font-size: 1.6rem;">{verdict['icon']} {verdict['verdict']}</h3>
                                     <p style="margin: 0.5rem 0 0 0; font-size: 1rem; opacity: 0.95;">{verdict['details']}</p>
                                 </div>

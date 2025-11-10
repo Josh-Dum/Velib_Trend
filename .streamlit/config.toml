@@ -1,0 +1,17 @@
+# Streamlit Theme Configuration
+# Professional Light Theme - Clean and modern interface
+# Inspired by GitHub, Linear, and modern dashboards
+
+[theme]
+base = "light"
+primaryColor = "#5DBB63"              # Vélib green - brand color for interactive elements
+backgroundColor = "#FFFFFF"           # Clean white background
+secondaryBackgroundColor = "#F0F2F6"  # Soft gray for cards and sections
+textColor = "#262730"                 # Dark gray text (easier on eyes than pure black)
+font = "sans serif"
+
+# This theme provides:
+# - Excellent readability with high contrast
+# - Professional appearance for recruiters
+# - Maintains Vélib brand identity with green accent
+# - Modern look similar to GitHub/Linear/Notion
