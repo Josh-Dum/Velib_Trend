@@ -56,6 +56,14 @@ st.markdown("""
         --border-color: #E5E7EB;
     }
     
+    /* ========== CENTER MAIN CONTENT ========== */
+    .block-container {
+        max-width: 1200px !important;
+        margin: 0 auto !important;
+        padding-left: 3rem !important;
+        padding-right: 3rem !important;
+    }
+    
     /* ========== MAIN TITLE ========== */
     .main-title {
         font-size: 2.8rem;
@@ -63,6 +71,7 @@ st.markdown("""
         color: var(--primary-green) !important;
         margin-bottom: 0.3rem;
         letter-spacing: -0.5px;
+        text-align: center;
     }
     
     .subtitle {
@@ -70,6 +79,7 @@ st.markdown("""
         color: var(--text-secondary) !important;
         font-weight: 400;
         margin-bottom: 1.5rem;
+        text-align: center;
     }
     
     /* ========== SECTION HEADERS ========== */
@@ -81,6 +91,7 @@ st.markdown("""
         margin-bottom: 1rem;
         border-left: 4px solid var(--primary-green);
         padding-left: 1rem;
+        text-align: left;
     }
     
     /* ========== CARDS & CONTAINERS ========== */
@@ -221,6 +232,15 @@ st.markdown("""
     h4, h5, h6 {
         color: var(--text-primary) !important;
         font-weight: 600 !important;
+    }
+    
+    /* ========== CENTER JOURNEY PLANNER ELEMENTS ========== */
+    .centered-header {
+        text-align: center;
+        font-size: 1.2rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin: 1.5rem 0 1rem 0;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -818,20 +838,18 @@ try:
             get_journey_verdict
         )
         
-        st.markdown('<div class="section-header">Plan Your Journey</div>', unsafe_allow_html=True)
+        # Improved introduction card
         st.markdown("""
-        <div class="info-card">
-        <strong>How it works:</strong> Enter your start and destination, and our AI will:
-        <ul style="margin-top: 0.5rem; margin-bottom: 0;">
-            <li>Find the nearest Vélib' stations</li>
-            <li>Predict bike/dock availability when you arrive</li>
-            <li>Calculate your total journey time</li>
-        </ul>
+        <div class="info-card" style="text-align: center; border-left: none; max-width: 700px; margin: 2rem auto;">
+        <strong style="font-size: 1.1rem;">Plan Your Journey with AI-Powered Predictions</strong>
+        <p style="margin: 1rem 0 0.5rem 0; color: var(--text-secondary); line-height: 1.6;">
+        Enter your starting point and destination. The system will locate the nearest Vélib' stations, 
+        predict bike and dock availability at your arrival time, and calculate your complete journey duration.
+        </p>
         </div>
         """, unsafe_allow_html=True)
         
         # Input form with better design
-        st.markdown("#### Journey Details")
         col1, col2 = st.columns(2)
         with col1:
             start_address = st.text_input(
@@ -848,8 +866,8 @@ try:
         
         st.markdown("")  # Spacing
         
-        # Plan route button with better styling
-        col_btn, col_spacer = st.columns([2, 3])
+        # Plan route button - centered
+        col_left, col_btn, col_right = st.columns([1, 2, 1])
         with col_btn:
             plan_button = st.button("Plan My Route", type="primary", use_container_width=True)
         
@@ -1094,7 +1112,7 @@ try:
         # UNIFIED MAP: Always shown, updates based on route state
         # ============================================================
         st.markdown("---")
-        st.markdown("### 🗺️ Paris Vélib' Network")
+        st.markdown('<h3 style="text-align: center; color: var(--text-primary); font-weight: 600; margin: 2rem 0 1rem 0;">Paris Vélib\' Network</h3>', unsafe_allow_html=True)
         
         # Prepare ALL stations as base layer
         all_stations_map = df[['lat', 'lon', 'name', 'stationcode', 'numbikesavailable']].copy()
@@ -1104,7 +1122,7 @@ try:
         
         if route_info is None:
             # No route planned: Show all stations color-coded by availability
-            st.caption(f"Showing all {len(df):,} Vélib' stations in Paris. Plan a route to see your journey overlay.")
+            st.markdown(f'<p style="text-align: center; color: var(--text-secondary); margin-bottom: 1.5rem;">Showing all {len(df):,} Vélib\' stations in Paris. Plan a route to see your journey overlay.</p>', unsafe_allow_html=True)
             
             # Color by availability
             def get_station_color(row):
@@ -1137,7 +1155,7 @@ try:
             
         else:
             # Route planned: Show all stations (gray) + route overlay (highlighted)
-            st.caption("All Vélib' stations shown in gray. Your route is highlighted in color.")
+            st.markdown('<p style="text-align: center; color: var(--text-secondary); margin-bottom: 1.5rem;">All Vélib\' stations shown in gray. Your route is highlighted in color.</p>', unsafe_allow_html=True)
             
             # Background stations (gray, small, semi-transparent)
             all_stations_map['type'] = 'background'
