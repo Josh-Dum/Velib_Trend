@@ -347,50 +347,7 @@ st.markdown('<h1 class="main-title">Velib Trend</h1>', unsafe_allow_html=True)
 st.markdown('<p class="subtitle">Real-time availability & AI-powered predictions for Paris bike-sharing</p>', unsafe_allow_html=True)
 st.markdown("---")
 
-# Sidebar - simplified, no navigation
-with st.sidebar:
-    # Clean logo section
-    st.markdown("### Velib Trend")
-    st.markdown("Paris Bike-Sharing Intelligence")
-    st.markdown("---")
-    
-    # Map Display Mode (always visible)
-    st.markdown("#### Map Display Mode")
-    if "mode" not in st.session_state:
-        st.session_state.mode = "bike"
-    mode = st.radio(
-        "What are you looking for?",
-        ["bike", "dock"],
-        format_func=lambda x: "🚲 Find a bike to rent" if x == "bike" else "🅿️ Find a dock to return",
-        key="mode_selector",
-        label_visibility="collapsed"
-    )
-    st.session_state.mode = mode
-    
-    st.markdown("---")
-    
-    # Collapsible advanced options (always visible)
-    with st.expander("⚙️ Advanced Options"):
-        validate = st.checkbox("Validate data types", value=True, help="Ensures data quality but may be slower")
-        refresh = st.button("🔄 Refresh data", help="Clear cache and reload fresh data")
-    
-    st.markdown("---")
-    st.markdown("#### About This App")
-    st.markdown("""
-    <div style='font-size: 0.85rem; line-height: 1.8; color: #6B7280;'>
-    <b>ML Predictions:</b> LSTM neural network<br>
-    <b>Data Updates:</b> Hourly via AWS Lambda<br>
-    <b>Model Accuracy:</b> R²=0.815 @ T+1h<br>
-    <b>Coverage:</b> 1,498 stations across Paris
-    </div>
-    """, unsafe_allow_html=True)
-    
-    st.markdown("---")
-    st.markdown("""
-    <div style='text-align: center; font-size: 0.75rem; color: #9CA3AF;'>
-    Built with Streamlit & AWS | © 2025 Velib Trend
-    </div>
-    """, unsafe_allow_html=True)
+validate = True  # Always request backend validation now that advanced options are gone
 
 @st.cache_data(ttl=60)
 def load_data(validate: bool) -> pd.DataFrame:
@@ -447,14 +404,8 @@ def load_data(validate: bool) -> pd.DataFrame:
     ]
     return df[ordered]
 
-if refresh:
-    load_data.clear()
-    # Also clear session state to force reload
-    if 'cached_df' in st.session_state:
-        del st.session_state['cached_df']
-
 # Use session state to persist data across reruns (avoids reloading on every interaction)
-if 'cached_df' not in st.session_state or refresh:
+if 'cached_df' not in st.session_state:
     st.session_state['cached_df'] = load_data(validate=validate)
 
 df = st.session_state['cached_df']
@@ -478,8 +429,7 @@ try:
     <div class="info-card" style="text-align: center; border-left: none; max-width: 700px; margin: 2rem auto;">
     <strong style="font-size: 1.3rem;">🚴 Plan Your Journey</strong>
     <p style="margin: 1rem 0 0.5rem 0; color: var(--text-secondary); line-height: 1.6;">
-    Enter your starting point and destination. The system will locate the nearest Vélib' stations, 
-    predict bike and dock availability at your arrival time, and calculate your complete journey duration.
+    Plan your trip with confidence. Enter your start and end points to confirm that a bike is waiting for you at your departure station and an empty dock will be available when you arrive. Enjoy your ride!
     </p>
     </div>
     """, unsafe_allow_html=True)
@@ -745,6 +695,9 @@ try:
     # UNIFIED MAP: One map for everything (route + search)
     # ============================================================
     st.markdown("---")
+    if "mode" not in st.session_state:
+        st.session_state["mode"] = "bike"
+    mode = st.session_state["mode"]
     st.markdown('<h3 style="text-align: center; color: var(--text-primary); font-weight: 600; margin: 2rem 0 1rem 0;">Paris Vélib\' Network</h3>', unsafe_allow_html=True)
     
     # Data preparation for map
@@ -766,7 +719,6 @@ try:
     df["pct_docks"] = pctd
 
     # Select metric based on mode (bike or dock)
-    mode = st.session_state.get("mode", "bike")
     metric_col = "pct_bikes" if mode == "bike" else "pct_docks"
     df["metric"] = df[metric_col]
 
@@ -988,7 +940,14 @@ try:
     
     # Legend
     if route_info is None:
-        st.markdown("**Station availability:** 🟢 Good (5+ bikes) · 🟠 Low (1-4 bikes) · 🔴 Empty")
+        mode = st.radio(
+            "Choose what availability to highlight on the map",
+            ["bike", "dock"],
+            format_func=lambda x: "🚲 Bikes available" if x == "bike" else "🅿️ Docks available",
+            key="mode"
+        )
+        resource_label = "bikes" if mode == "bike" else "docks free"
+        st.markdown(f"**Station availability:** 🟢 Good (5+ {resource_label}) · 🟠 Low (1-4 {resource_label}) · 🔴 Empty")
     else:
         col1, col2 = st.columns(2)
         with col1:
@@ -997,48 +956,6 @@ try:
         with col2:
             st.markdown("**Network:**")
             st.markdown(f"⚪ All {len(df):,} Vélib stations (gray)")
-    
-    # Add collapsible legend and stats below the map
-    with st.expander("Map Legend & Statistics"):
-        col_legend, col_stats = st.columns([1, 2])
-        with col_legend:
-            st.markdown("#### Color Code")
-            if mode == "bike":
-                st.markdown("""
-<div style='line-height:1.8'>
-<span style='display:inline-block;width:14px;height:14px;background:#5DBB63;border-radius:50%;margin-right:8px;'></span> ≥ 60% bikes available<br>
-<span style='display:inline-block;width:14px;height:14px;background:#F39C12;border-radius:50%;margin-right:8px;'></span> 30–59% bikes available<br>
-<span style='display:inline-block;width:14px;height:14px;background:#E74C3C;border-radius:50%;margin-right:8px;'></span> < 30% bikes available<br>
-<span style='display:inline-block;width:14px;height:14px;background:#2C3E50;border-radius:50%;margin-right:8px;'></span> No data
-</div>
-""", unsafe_allow_html=True)
-            else:
-                st.markdown("""
-<div style='line-height:1.8'>
-<span style='display:inline-block;width:14px;height:14px;background:#5DBB63;border-radius:50%;margin-right:8px;'></span> ≥ 60% docks free<br>
-<span style='display:inline-block;width:14px;height:14px;background:#F39C12;border-radius:50%;margin-right:8px;'></span> 30–59% docks free<br>
-<span style='display:inline-block;width:14px;height:14px;background:#E74C3C;border-radius:50%;margin-right:8px;'></span> < 30% docks free<br>
-<span style='display:inline-block;width:14px;height:14px;background:#2C3E50;border-radius:50%;margin-right:8px;'></span> No data
-</div>
-""", unsafe_allow_html=True)
-        
-        with col_stats:
-            st.markdown("#### Network Statistics")
-            avg_bikes = map_df["numbikesavailable"].fillna(0).mean()
-            avg_docks = map_df["numdocksavailable"].fillna(0).mean()
-            total_capacity = map_df["capacity"].fillna(0).sum()
-            if total_capacity > 0:
-                fleet_util = (map_df["numbikesavailable"].fillna(0).sum() / total_capacity) * 100
-            else:
-                fleet_util = 0.0
-            
-            col_s1, col_s2, col_s3 = st.columns(3)
-            with col_s1:
-                st.metric("Stations", f"{len(map_df)}")
-            with col_s2:
-                st.metric("Fleet Usage", f"{fleet_util:.1f}%")
-            with col_s3:
-                st.metric("Avg Bikes/Station", f"{avg_bikes:.1f}")
     
     # ============================================================
     # STATION DETAILS & PREDICTIONS (when a station is selected)
