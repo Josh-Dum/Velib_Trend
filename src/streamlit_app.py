@@ -1,8 +1,10 @@
-import os
+﻿import os
 import time
 import html
 import textwrap
-from typing import List, Dict, Tuple
+import urllib.parse
+import base64
+from typing import List, Dict, Tuple, Optional
 import requests
 import pandas as pd
 import streamlit as st
@@ -28,6 +30,123 @@ AI_PREDICTION_ICON = textwrap.dedent(
         </svg>
         """
 ).strip()
+
+
+def _svg_data_uri(svg: str) -> str:
+    """Return a base64 data URI for an inline SVG string."""
+    payload = svg.strip().encode("utf-8")
+    encoded = base64.b64encode(payload).decode("ascii")
+    return f"data:image/svg+xml;base64,{encoded}"
+
+
+ROUTE_ICON_SPECS: Dict[str, Dict[str, object]] = {
+    "origin_pin": {
+        "svg": textwrap.dedent(
+            """
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+                            <path d="M60 10 C 75 10, 85 20, 85 35 C 85 50, 75 65, 60 95 C 45 65, 35 50, 35 35 C 35 20, 45 10, 60 10 Z"
+                                        fill="#5DBB63" stroke="none"/>
+              <circle cx="60" cy="35" r="12" fill="#FFFFFF"/>
+                            <circle cx="60" cy="35" r="5" fill="#5DBB63"/>
+            </svg>
+            """
+        ).strip(),
+        "width": 120,
+        "height": 120,
+        "anchor_y": 108,
+    },
+    "pickup_station": {
+        "svg": textwrap.dedent(
+            """
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+                            <circle cx="60" cy="60" r="45" fill="#5DBB63" stroke="none"/>
+              <circle cx="42" cy="70" r="10" fill="none" stroke="#FFFFFF" stroke-width="3"/>
+              <circle cx="78" cy="70" r="10" fill="none" stroke="#FFFFFF" stroke-width="3"/>
+              <path d="M 50 70 L 60 45 L 70 70 L 60 45 L 75 45"
+                    fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+              <line x1="42" y1="70" x2="60" y2="70" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round"/>
+              <line x1="70" y1="70" x2="78" y2="70" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round"/>
+            </svg>
+            """
+        ).strip(),
+        "width": 120,
+        "height": 120,
+        "anchor_y": 108,
+    },
+    "return_station": {
+        "svg": textwrap.dedent(
+            """
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+                            <circle cx="60" cy="60" r="45" fill="#5DBB63" stroke="none"/>
+              <rect x="40" y="45" width="12" height="30" rx="2" fill="none" stroke="#FFFFFF" stroke-width="3"/>
+              <rect x="68" y="45" width="12" height="30" rx="2" fill="none" stroke="#FFFFFF" stroke-width="3"/>
+              <rect x="35" y="73" width="50" height="4" rx="2" fill="#FFFFFF"/>
+              <line x1="46" y1="52" x2="46" y2="68" stroke="#FFFFFF" stroke-width="2"/>
+              <line x1="74" y1="52" x2="74" y2="68" stroke="#FFFFFF" stroke-width="2"/>
+            </svg>
+            """
+        ).strip(),
+        "width": 120,
+        "height": 120,
+        "anchor_y": 108,
+    },
+    "destination_flag": {
+        "svg": textwrap.dedent(
+            """
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+                            <circle cx="60" cy="60" r="45" fill="#5DBB63" stroke="none"/>
+              <line x1="50" y1="45" x2="50" y2="78" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round"/>
+              <path d="M 50 45 L 50 50 L 75 48 L 75 60 L 50 58 L 50 63"
+                    fill="#FFFFFF" stroke="none"/>
+              <circle cx="50" cy="78" r="3" fill="#FFFFFF"/>
+            </svg>
+            """
+        ).strip(),
+        "width": 120,
+        "height": 120,
+        "anchor_y": 108,
+    },
+}
+
+
+ROUTE_ICON_MAPPING: Dict[str, Dict[str, object]] = {
+    key: {
+        "url": _svg_data_uri(spec["svg"]),
+        "width": spec["width"],
+        "height": spec["height"],
+        "anchorY": spec["anchor_y"],
+        "anchorX": spec["width"] // 2,
+    }
+    for key, spec in ROUTE_ICON_SPECS.items()
+}
+
+
+def _build_icon_payload(icon_key: Optional[str]) -> Optional[Dict[str, object]]:
+    """Return a deck.gl icon payload for the given icon key."""
+    if not icon_key:
+        return None
+    spec = ROUTE_ICON_MAPPING.get(icon_key)
+    if spec is None:
+        return None
+    payload = dict(spec)
+    payload.setdefault("mask", False)
+    return payload
+
+
+ROUTE_ICON_SIZE_MAP: Dict[str, int] = {
+    "start": 66,
+    "start_station": 62,
+    "end_station": 62,
+    "destination": 66,
+}
+
+
+ROUTE_ICON_KEY_BY_TYPE: Dict[str, str] = {
+    "start": "origin_pin",
+    "start_station": "pickup_station",
+    "end_station": "return_station",
+    "destination": "destination_flag",
+}
 
 # ============================================================
 # UTILITY FUNCTIONS - Moved to top for reusability
@@ -693,7 +812,8 @@ try:
         geocode_address,
         plan_route,
         get_prediction_at_time,
-        get_journey_verdict
+        get_journey_verdict,
+        build_route_segments
     )
     
     # Section header
@@ -765,6 +885,15 @@ try:
                     end_station = route['end_station']
                     progress_text.success("✅ Route ready")
                     
+                    route_segments = build_route_segments(
+                        start_lat,
+                        start_lon,
+                        dest_lat,
+                        dest_lon,
+                        start_station,
+                        end_station
+                    )
+
                     # Store route data in session state for map display
                     st.session_state['route_data'] = {
                         'start_lat': start_lat,
@@ -773,7 +902,8 @@ try:
                         'dest_lon': dest_lon,
                         'start_station': start_station,
                         'end_station': end_station,
-                        'route': route
+                        'route': route,
+                        'segments': route_segments
                     }
                     
                     # Check if same station
@@ -1109,6 +1239,8 @@ try:
     
     # Check states: route planned? station searched?
     route_info = st.session_state.get('route_data', None)
+    path_entries: List[Dict[str, object]] = []
+    icon_points: Optional[pd.DataFrame] = None
     
     # Determine map state: route, search, or default
     if route_info is not None:
@@ -1117,8 +1249,8 @@ try:
         
         # Background stations (gray, small, semi-transparent)
         all_stations_map['type'] = 'background'
-        all_stations_map['color'] = [[180, 180, 180, 80]] * len(all_stations_map)
-        all_stations_map['radius'] = 60
+        all_stations_map['color'] = [[180, 180, 180, 78]] * len(all_stations_map)
+        all_stations_map['radius'] = 54
         
         # Extract route info
         start_lat = route_info['start_lat']
@@ -1128,37 +1260,116 @@ try:
         start_station = route_info['start_station']
         end_station = route_info['end_station']
         
-        # Create route points
+        segments = route_info.get('segments')
+        if segments is None:
+            segments = build_route_segments(
+                start_lat,
+                start_lon,
+                dest_lat,
+                dest_lon,
+                start_station,
+                end_station
+            )
+            route_info['segments'] = segments
+            try:
+                st.session_state['route_data']['segments'] = segments
+            except KeyError:
+                pass
+
+        map_data = all_stations_map
+
         route_points = pd.DataFrame({
-            'lat': [start_lat, start_station['lat'], end_station['lat'], dest_lat],
-            'lon': [start_lon, start_station['lon'], end_station['lon'], dest_lon],
+            'lat': [float(start_lat), float(start_station['lat']), float(end_station['lat']), float(dest_lat)],
+            'lon': [float(start_lon), float(start_station['lon']), float(end_station['lon']), float(dest_lon)],
             'type': ['start', 'start_station', 'end_station', 'destination'],
-            'name': ['Your location', start_station['name'], end_station['name'], 'Destination'],
-            'stationcode': ['', start_station.get('stationcode', ''), end_station.get('stationcode', ''), ''],
-            'numbikesavailable': [0, start_station.get('numbikesavailable', 0), end_station.get('numbikesavailable', 0), 0],
-            'numdocksavailable': [0, start_station.get('numdocksavailable', 0), end_station.get('numdocksavailable', 0), 0]
+            'name': ['You (current)', start_station['name'], end_station['name'], 'Destination'],
+            'stationcode': ['', str(start_station.get('stationcode', '')), str(end_station.get('stationcode', '')), ''],
+            'numbikesavailable': [np.nan, start_station.get('numbikesavailable', np.nan), end_station.get('numbikesavailable', np.nan), np.nan],
+            'numdocksavailable': [np.nan, start_station.get('numdocksavailable', np.nan), end_station.get('numdocksavailable', np.nan), np.nan]
         })
-        route_points = add_color_columns(route_points)
-        
-        color_map = {
-            'start': [255, 0, 0, 235],
-            'start_station': [0, 200, 0, 255],
-            'end_station': [0, 100, 255, 255],
-            'destination': [255, 0, 0, 235]
-        }
-        route_points['color'] = route_points['type'].map(color_map)
-        route_points['radius'] = 120
-        
-        # Combine: background + route
-        map_data = pd.concat([all_stations_map, route_points], ignore_index=True)
-        
-        # Zoom to route
-        view_state = pdk.ViewState(
-            latitude=(start_lat + dest_lat) / 2,
-            longitude=(start_lon + dest_lon) / 2,
-            zoom=13,
-            pitch=0
-        )
+        route_points['numbikesavailable'] = pd.to_numeric(route_points['numbikesavailable'], errors='coerce')
+        route_points['numdocksavailable'] = pd.to_numeric(route_points['numdocksavailable'], errors='coerce')
+
+        for segment in segments or []:
+            coords = segment.get('coordinates') or []
+            if not isinstance(coords, list) or len(coords) < 2:
+                continue
+            mode = segment.get('mode', 'bike')
+            path: List[List[float]] = []
+            for point in coords:
+                if not isinstance(point, (list, tuple)) or len(point) < 2:
+                    continue
+                try:
+                    lon = float(point[0])
+                    lat = float(point[1])
+                except (TypeError, ValueError):
+                    continue
+                path.append([lon, lat])
+            if len(path) < 2:
+                continue
+            color = [243, 156, 18, 210] if mode == 'walk' else [52, 152, 219, 220]
+            width = 6 if mode == 'walk' else 10
+            path_entries.append({
+                'path': path,
+                'color': color,
+                'width': width,
+                'mode': mode
+            })
+
+        icon_points = route_points.copy()
+        icon_points['icon_key'] = icon_points['type'].map(ROUTE_ICON_KEY_BY_TYPE)
+        icon_points['icon_size'] = icon_points['type'].map(ROUTE_ICON_SIZE_MAP)
+        icon_points['icon_data'] = icon_points['icon_key'].apply(_build_icon_payload)
+        icon_points = icon_points.dropna(subset=['icon_data'])
+        icon_points['lat'] = pd.to_numeric(icon_points['lat'], errors='coerce')
+        icon_points['lon'] = pd.to_numeric(icon_points['lon'], errors='coerce')
+        icon_points = icon_points.dropna(subset=['lat', 'lon'])
+
+        icon_points['bikes_color'] = icon_points['numbikesavailable'].apply(get_availability_color)
+        icon_points['docks_color'] = icon_points['numdocksavailable'].apply(get_availability_color)
+
+        def _format_metric(value):
+            if pd.isna(value):
+                return "—"
+            try:
+                as_int = int(round(float(value)))
+                return f"{as_int}"
+            except (TypeError, ValueError):
+                return "—"
+
+        icon_points['numbikesavailable'] = icon_points['numbikesavailable'].apply(_format_metric)
+        icon_points['numdocksavailable'] = icon_points['numdocksavailable'].apply(_format_metric)
+
+        if path_entries:
+            all_points = [pt for segment in path_entries for pt in segment['path']]
+            lats = [pt[1] for pt in all_points]
+            lons = [pt[0] for pt in all_points]
+            center_lat = sum(lats) / len(lats)
+            center_lon = sum(lons) / len(lons)
+            lat_span = max(lats) - min(lats)
+            lon_span = max(lons) - min(lons)
+            span = max(lat_span, lon_span)
+            if span < 0.01:
+                zoom_level = 15
+            elif span < 0.03:
+                zoom_level = 14
+            elif span < 0.06:
+                zoom_level = 13
+            else:
+                zoom_level = 12
+            view_state = pdk.ViewState(
+                latitude=center_lat,
+                longitude=center_lon,
+                zoom=zoom_level,
+                pitch=0
+            )
+        else:
+            view_state = pdk.ViewState(
+                latitude=(start_lat + dest_lat) / 2,
+                longitude=(start_lon + dest_lon) / 2,
+                zoom=13,
+                pitch=0
+            )
         
     elif station_code_input and selected_station in station_lookup:
         # STATE 2: Station searched (no route) - zoom to selected station
@@ -1178,6 +1389,7 @@ try:
             zoom=15,
             pitch=0
         )
+        icon_points = None
         
     else:
         # STATE 3: Default view - show all Paris
@@ -1194,6 +1406,7 @@ try:
             zoom=11,  # Reduced from 12 to show wider area
             pitch=0
         )
+        icon_points = None
     
     # Tooltip (same for all states)
     tooltip = {
@@ -1225,7 +1438,7 @@ try:
         
     
     # Create and display the map
-    layer = pdk.Layer(
+    scatter_layer = pdk.Layer(
         'ScatterplotLayer',
         data=map_data,
         get_position='[lon, lat]',
@@ -1242,8 +1455,45 @@ try:
         opacity=0.8  # Same as Explore Map - solid, professional look
     )
     
+    layers = [scatter_layer]
+    if path_entries:
+        path_layer = pdk.Layer(
+            'PathLayer',
+            data=path_entries,
+            get_path='path',
+            get_color='color',
+            get_width='width',
+            width_scale=1,
+            width_min_pixels=3,
+            width_max_pixels=14,
+            rounded=True,
+            pickable=False
+        )
+        layers.append(path_layer)
+    if icon_points is not None and not icon_points.empty:
+        icon_layer_df = icon_points[
+            ['lon', 'lat', 'icon_data', 'icon_size', 'name', 'numbikesavailable', 'numdocksavailable', 'bikes_color', 'docks_color']
+        ].copy()
+        icon_layer_df['lon'] = icon_layer_df['lon'].astype(float)
+        icon_layer_df['lat'] = icon_layer_df['lat'].astype(float)
+        icon_layer_df['icon_size'] = icon_layer_df['icon_size'].fillna(60).astype(float)
+        icon_layer = pdk.Layer(
+            'IconLayer',
+            data=icon_layer_df,
+            get_icon='icon_data',
+            get_size='icon_size',
+            size_scale=1,
+            size_units='pixels',
+            size_min_pixels=28,
+            size_max_pixels=96,
+            get_position='[lon, lat]',
+            billboard=True,
+            pickable=True
+        )
+        layers.append(icon_layer)
+
     deck = pdk.Deck(
-        layers=[layer],
+        layers=layers,
         initial_view_state=view_state,
         tooltip=tooltip,
         map_style='light'
@@ -1265,7 +1515,9 @@ try:
         col1, col2 = st.columns(2)
         with col1:
             st.markdown("**Your Route:**")
-            st.markdown("🔴 You/Destination · 🟢 Start Station · 🔵 End Station")
+            st.markdown("Ruby pin = You now · Emerald wheel = Pickup station · Azure dock = Drop-off station · Violet flag = Destination")
+            if path_entries:
+                st.markdown("🟦 Bike path · 🟧 Walking segments")
         with col2:
             st.markdown("**Network:**")
             st.markdown(f"⚪ All {len(df):,} Vélib stations (gray)")

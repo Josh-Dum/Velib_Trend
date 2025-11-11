@@ -9,7 +9,7 @@ import requests
 import numpy as np
 import pandas as pd
 from math import radians, sin, cos, sqrt, atan2
-from typing import Tuple, Dict, Optional
+from typing import Tuple, Dict, Optional, List, Any
 import time
 from functools import lru_cache
 
@@ -21,6 +21,9 @@ BIKE_THRESHOLD_SAFE = 4  # >= 4 bikes = safe
 BIKE_THRESHOLD_MIN = 2   # >= 2 bikes = possible
 DOCK_THRESHOLD_SAFE = 4  # >= 4 docks = safe
 DOCK_THRESHOLD_MIN = 2   # >= 2 docks = possible
+
+OSRM_BASE_URL = "https://router.project-osrm.org"
+OSRM_TIMEOUT = 10
 
 # Geocoding cache (LRU cache for 128 most recent addresses)
 @lru_cache(maxsize=128)
@@ -193,6 +196,59 @@ def plan_route(start_lat: float, start_lon: float,
         'arrival_at_start_min': arrival_at_start_min,
         'arrival_at_end_min': arrival_at_end_min
     }
+
+
+def _fetch_osrm_route(start_lat: float, start_lon: float,
+                      end_lat: float, end_lon: float,
+                      profile: str) -> List[List[float]]:
+    """Fetch a route polyline from OSRM and return GeoJSON coordinates."""
+    coordinates = f"{start_lon:.6f},{start_lat:.6f};{end_lon:.6f},{end_lat:.6f}"
+    params = {"overview": "full", "geometries": "geojson"}
+    url = f"{OSRM_BASE_URL}/route/v1/{profile}/{coordinates}"
+    try:
+        response = requests.get(url, params=params, timeout=OSRM_TIMEOUT)
+        response.raise_for_status()
+        payload = response.json()
+        routes = payload.get("routes", [])
+        if routes:
+            geometry = routes[0].get("geometry", {})
+            coords = geometry.get("coordinates", [])
+            if isinstance(coords, list) and coords:
+                return coords
+    except requests.RequestException as exc:
+        print(f"OSRM request error ({profile}): {exc}")
+    except (ValueError, KeyError, TypeError) as exc:
+        print(f"OSRM parse error ({profile}): {exc}")
+    return []
+
+
+def build_route_segments(start_lat: float, start_lon: float,
+                         dest_lat: float, dest_lon: float,
+                         start_station: Dict[str, Any], end_station: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Create walking and biking segments for map visualisation."""
+    segments: List[Dict[str, Any]] = []
+
+    try:
+        station_start_lat = float(start_station["lat"])
+        station_start_lon = float(start_station["lon"])
+        station_end_lat = float(end_station["lat"])
+        station_end_lon = float(end_station["lon"])
+    except (KeyError, TypeError, ValueError):
+        return segments
+
+    walk_in = _fetch_osrm_route(start_lat, start_lon, station_start_lat, station_start_lon, "foot")
+    if walk_in:
+        segments.append({"mode": "walk", "coordinates": walk_in})
+
+    bike = _fetch_osrm_route(station_start_lat, station_start_lon, station_end_lat, station_end_lon, "bike")
+    if bike:
+        segments.append({"mode": "bike", "coordinates": bike})
+
+    walk_out = _fetch_osrm_route(station_end_lat, station_end_lon, dest_lat, dest_lon, "foot")
+    if walk_out:
+        segments.append({"mode": "walk", "coordinates": walk_out})
+
+    return segments
 
 
 def get_prediction_at_time(station_code: str, minutes_from_now: float, api_base_url: str) -> Dict:
