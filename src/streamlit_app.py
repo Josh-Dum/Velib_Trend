@@ -1543,13 +1543,12 @@ try:
     # ============================================================
     if station_code_input:
         st.markdown("---")
-        st.markdown('<div class="section-header">📊 Station Details & AI Predictions</div>', unsafe_allow_html=True)
         
         # Find station in dataframe
         station_data = map_df[map_df['stationcode'].astype(str) == str(station_code_input)]
         
         if station_data.empty:
-            st.error(f"❌ Station {station_code_input} not found")
+            st.error(f"Station {station_code_input} not found.")
         else:
             selected_station_row = station_data.iloc[0]
             station_code = str(selected_station_row['stationcode'])
@@ -1557,40 +1556,174 @@ try:
             current_bikes = selected_station_row['numbikesavailable']
             current_docks = selected_station_row['numdocksavailable']
             capacity = selected_station_row['capacity']
-                
-            # Display station header with card styling
-            st.markdown(f"""
-            <div class="station-card">
-                <h2 style="margin: 0; font-size: 1.8rem;">🚲 {station_name}</h2>
-                <p style="margin: 0.5rem 0 0 0; opacity: 0.9;">
-                    Station Code: {station_code} • Total Capacity: {int(capacity)} spaces
-                </p>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            # Current status with improved metrics
-            st.markdown("#### 📍 Current Availability")
-            col1, col2, col3, col4 = st.columns(4)
+
+            if not st.session_state.get("_station_section_css"):
+                st.markdown(
+                    """
+                    <style>
+                        .station-summary-card {
+                            background: var(--bg-card);
+                            border: 1px solid var(--border-color);
+                            border-radius: 12px;
+                            padding: 1.4rem 1.6rem;
+                            margin: 1.8rem 0 1.2rem 0;
+                        }
+                        .station-summary-card h2 {
+                            margin: 0;
+                            font-size: 1.65rem;
+                            color: var(--text-primary);
+                            font-weight: 600;
+                        }
+                        .station-summary-card p {
+                            margin: 0.45rem 0 0 0;
+                            font-size: 0.95rem;
+                            color: var(--text-secondary);
+                        }
+                        .metric-card {
+                            background: var(--bg-card);
+                            border: 1px solid var(--border-color);
+                            border-radius: 12px;
+                            padding: 1.1rem 1rem 1.2rem 1rem;
+                            text-align: center;
+                            transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+                        }
+                        .metric-card__label {
+                            font-size: 0.72rem;
+                            text-transform: uppercase;
+                            letter-spacing: 0.09em;
+                            color: var(--text-secondary);
+                            font-weight: 600;
+                        }
+                        .metric-card__value {
+                            margin-top: 0.35rem;
+                            font-size: 1.6rem;
+                            font-weight: 600;
+                            color: var(--text-primary);
+                        }
+                        .metric-card__detail {
+                            margin-top: 0.55rem;
+                            font-size: 0.85rem;
+                            color: var(--text-secondary);
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            gap: 0.45rem;
+                            flex-wrap: wrap;
+                        }
+                        .metric-badge {
+                            display: inline-flex;
+                            align-items: center;
+                            justify-content: center;
+                            padding: 0.25rem 0.75rem;
+                            border-radius: 999px;
+                            font-weight: 600;
+                            font-size: 0.85rem;
+                        }
+                        .metric-badge--positive {
+                            background: rgba(93, 187, 99, 0.16);
+                            color: #2F855A;
+                        }
+                        .metric-badge--neutral {
+                            background: rgba(243, 156, 18, 0.18);
+                            color: #8C5A14;
+                        }
+                        .metric-badge--negative {
+                            background: rgba(231, 76, 60, 0.18);
+                            color: #9B2C2C;
+                        }
+                        .metric-card--positive {
+                            background: linear-gradient(135deg, rgba(93, 187, 99, 0.18), rgba(93, 187, 99, 0.08));
+                            border-color: rgba(93, 187, 99, 0.45);
+                        }
+                        .metric-card--warning {
+                            background: linear-gradient(135deg, rgba(243, 156, 18, 0.2), rgba(243, 156, 18, 0.08));
+                            border-color: rgba(243, 156, 18, 0.45);
+                        }
+                        .metric-card--negative {
+                            background: linear-gradient(135deg, rgba(231, 76, 60, 0.22), rgba(231, 76, 60, 0.1));
+                            border-color: rgba(231, 76, 60, 0.45);
+                        }
+                    </style>
+                    """,
+                    unsafe_allow_html=True,
+                )
+                st.session_state["_station_section_css"] = True
+
+            def _safe_int(value: object, default: int = 0) -> int:
+                try:
+                    return int(float(value))
+                except (TypeError, ValueError):
+                    return default
+
+            current_bikes_int = _safe_int(current_bikes)
+            current_docks_int = _safe_int(current_docks)
+            capacity_int = max(_safe_int(capacity), 0)
+
+            station_title = html.escape(str(station_name))
+            station_metadata = html.escape(f"Capacity {capacity_int} docks")
+
+            st.markdown(
+                f"""
+                <div class="station-summary-card">
+                    <h2>{station_title}</h2>
+                    <p>{station_metadata}</p>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+            def _metric_card(label: str, value_html: str, detail_html: Optional[str] = None, variant_class: Optional[str] = None) -> str:
+                detail_section = f"<div class=\"metric-card__detail\">{detail_html}</div>" if detail_html else ""
+                classes = ["metric-card"]
+                if variant_class:
+                    classes.append(variant_class)
+                class_attr = " ".join(classes)
+                return textwrap.dedent(
+                    f"""
+                    <div class="{class_attr}">
+                        <div class="metric-card__label">{html.escape(label)}</div>
+                        <div class="metric-card__value">{value_html}</div>
+                        {detail_section}
+                    </div>
+                    """
+                ).strip()
+
+            def _availability_variant(count: int) -> str:
+                if count >= 5:
+                    return "metric-card--positive"
+                if count >= 1:
+                    return "metric-card--warning"
+                return "metric-card--negative"
+
+            bikes_variant = _availability_variant(current_bikes_int)
+            docks_variant = _availability_variant(current_docks_int)
+
+            col1, col2 = st.columns(2)
             with col1:
-                st.metric("🚴 Available Bikes", int(current_bikes))
+                st.markdown(
+                    _metric_card(
+                        "Available bikes",
+                        html.escape(f"{current_bikes_int}"),
+                        html.escape("Ready to ride now"),
+                        variant_class=bikes_variant,
+                    ),
+                    unsafe_allow_html=True,
+                )
             with col2:
-                st.metric("🅿️ Free Docks", int(current_docks))
-            with col3:
-                occupancy = (current_bikes / capacity * 100) if capacity > 0 else 0
-                st.metric("📊 Occupancy", f"{occupancy:.0f}%")
-            with col4:
-                # Status indicator
-                if occupancy >= 60:
-                    status = "🟢 High"
-                elif occupancy >= 30:
-                    status = "🟡 Medium"
-                else:
-                    status = "🔴 Low"
-                st.metric("🎯 Bike Status", status)
-            
+                st.markdown(
+                    _metric_card(
+                        "Free docks",
+                        html.escape(f"{current_docks_int}"),
+                        html.escape("Empty docking points"),
+                        variant_class=docks_variant,
+                    ),
+                    unsafe_allow_html=True,
+                )
+
+            st.markdown("<div style='height: 1.6rem;'></div>", unsafe_allow_html=True)
+
             # Fetch historical data + predictions
-            st.markdown("#### 🔮 AI-Powered Predictions")
-            with st.spinner("⏳ Loading ML predictions from AWS SageMaker... (5-10 seconds)"):
+            with st.spinner("Retrieving predictions (approximately 5-10 seconds)..."):
                 try:
                     pred_url = f"{API_BASE}/predict/{station_code}"
                     pred_response = requests.get(pred_url, timeout=30)
@@ -1603,7 +1736,7 @@ try:
                     
                     # Check if we have data
                     if not historical:
-                        st.warning("⚠️ No historical data available for this station")
+                        st.warning("No historical data available for this station.")
                     else:
                         # Create visualization with plotly
                         fig = go.Figure()
@@ -1627,6 +1760,27 @@ try:
                                 # Skip invalid data points
                                 continue
                         
+                        current_time_paris = datetime.now(ZoneInfo('Europe/Paris'))
+                        if hist_times:
+                            last_hist_time = hist_times[-1]
+                            if isinstance(last_hist_time, datetime):
+                                try:
+                                    time_delta = current_time_paris - last_hist_time
+                                except TypeError:
+                                    time_delta = None
+                                if time_delta is None or time_delta.total_seconds() > 60:
+                                    hist_times.append(current_time_paris)
+                                    hist_bikes.append(current_bikes_int)
+                                else:
+                                    hist_times[-1] = current_time_paris
+                                    hist_bikes[-1] = current_bikes_int
+                            else:
+                                hist_times[-1] = current_time_paris
+                                hist_bikes[-1] = current_bikes_int
+                        else:
+                            hist_times = [current_time_paris]
+                            hist_bikes = [current_bikes_int]
+
                         # Add historical trace with smooth curve
                         if hist_times and all(isinstance(t, datetime) for t in hist_times):
                             fig.add_trace(go.Scatter(
@@ -1639,7 +1793,7 @@ try:
                                 hovertemplate='<b>%{x|%H:%M}</b><br>Bikes: %{y}<extra></extra>'
                             ))
                         elif hist_times:
-                            st.warning("⚠️ Invalid historical time data types detected")
+                            st.warning("Historical data contained invalid timestamps. Skipping those points.")
                         
                         # Add predictions if available
                         if predictions_dict:
@@ -1668,8 +1822,6 @@ try:
                                 # Add smooth connection line from last historical point to first prediction
                                 if hist_times and hist_bikes:
                                     # Create smooth connecting segment with intermediate points
-                                    from datetime import timedelta
-                                    
                                     start_time = hist_times[-1]
                                     end_time = pred_times[0]
                                     start_bikes = hist_bikes[-1]
@@ -1714,18 +1866,18 @@ try:
                                     hovertemplate='<b>%{x|%H:%M}</b><br>Predicted: %{y} bikes<extra></extra>'
                                 ))
                             elif pred_times:
-                                st.warning(f"⚠️ Invalid prediction time data types detected")
+                                st.warning("Prediction data contained invalid timestamps. Skipping those points.")
                         
                         # Add current time vertical line (only if we have valid traces)
                         if len(fig.data) > 0:
                             try:
-                                current_time = datetime.now(ZoneInfo('Europe/Paris'))
+                                current_time = current_time_paris
                                 fig.add_vline(
                                     x=current_time,
                                     line_dash="dot",
-                                    line_color="red",
+                                    line_color="#5DBB63",
                                     line_width=2,
-                                    annotation_text="🕐 Now",
+                                    annotation_text="Now",
                                     annotation_position="top right"
                                 )
                             except Exception as vline_error:
@@ -1735,7 +1887,7 @@ try:
                         # Update layout with better styling
                         fig.update_layout(
                             title={
-                                'text': f"📈 24-Hour History & AI Predictions",
+                                'text': "24-Hour History & AI Predictions",
                                 'x': 0.5,
                                 'xanchor': 'center'
                             },
@@ -1759,84 +1911,65 @@ try:
                         
                         # Show prediction details below chart
                         if predictions_dict:
-                            st.markdown("#### 🎯 Predictions")
-                            col1, col2, col3 = st.columns(3)
-                            
-                            for i, (col, key) in enumerate(zip([col1, col2, col3], ['T+1h', 'T+2h', 'T+3h'])):
-                                if key in predictions_dict:
-                                    with col:
-                                        pred = predictions_dict[key]
-                                        try:
-                                            dt_utc = datetime.fromisoformat(pred['time'].replace('Z', '+00:00'))
-                                            dt_paris = dt_utc.astimezone(ZoneInfo('Europe/Paris'))
-                                            time_str = dt_paris.strftime("%H:%M")
-                                        except Exception:
-                                            time_str = "??:??"
-                                        
-                                        try:
-                                            # Extract bikes value (convert to int)
-                                            bikes_raw = pred.get('bikes', 0)
-                                            if isinstance(bikes_raw, (int, float)):
-                                                bikes = int(bikes_raw)
-                                            else:
-                                                st.error(f"⚠️ Invalid bikes value: {bikes_raw} (type: {type(bikes_raw)})")
-                                                continue
-                                            
-                                            # Calculate change
-                                            current_bikes_int = int(current_bikes)
-                                            change = bikes - current_bikes_int
-                                            
-                                            # Verify change is a valid number
-                                            if not isinstance(change, (int, float)):
-                                                continue
-                                            
-                                            # Format delta string separately to avoid formatting issues
-                                            if change != 0:
-                                                delta_str = f"{int(change):+d} bikes"
-                                            else:
-                                                delta_str = "stable"
-                                            
-                                            st.metric(
-                                                f"⏰ {time_str} (Paris)",
-                                                f"{bikes} bikes",
-                                                delta=delta_str,
-                                                delta_color="normal" if change == 0 else ("inverse" if change < 0 else "normal")
-                                            )
-                                        except (ValueError, TypeError):
-                                            # Skip invalid predictions silently
-                                            pass
-                        
-                        # Show metadata in collapsible section
-                        with st.expander("🔧 Technical Details"):
-                            model_info = pred_data.get("model", {})
-                            metadata = pred_data.get("metadata", {})
-                            is_simulated = metadata.get("simulated_history", False)
-                            
-                            col1, col2, col3 = st.columns(3)
-                            with col1:
-                                st.caption(f"🤖 Model: {model_info.get('version', 'unknown')}")
-                            with col2:
-                                st.caption(f"⚡ Inference: {model_info.get('inference_time_ms', 0):.0f}ms")
-                            with col3:
-                                if is_simulated:
-                                    st.caption("📊 Data: Simulated")
+                            prediction_columns = st.columns(3)
+                            keys_in_order = ['T+1h', 'T+2h', 'T+3h']
+
+                            for column, key in zip(prediction_columns, keys_in_order):
+                                if key not in predictions_dict:
+                                    continue
+
+                                pred = predictions_dict[key]
+                                time_label = "--:--"
+                                try:
+                                    dt_utc = datetime.fromisoformat(pred['time'].replace('Z', '+00:00'))
+                                    dt_paris = dt_utc.astimezone(ZoneInfo('Europe/Paris'))
+                                    time_label = dt_paris.strftime("%H:%M")
+                                except Exception:
+                                    pass
+
+                                bikes_raw = pred.get('bikes', 0)
+                                if not isinstance(bikes_raw, (int, float)):
+                                    continue
+                                bikes_value = int(bikes_raw)
+
+                                change_raw = pred.get('change')
+                                if isinstance(change_raw, (int, float)):
+                                    change = int(change_raw)
+                                elif isinstance(change_raw, str):
+                                    change = _safe_int(change_raw, bikes_value - current_bikes_int)
                                 else:
-                                    st.caption("✅ Data: Real S3")
-                            
-                            if is_simulated:
-                                st.info("ℹ️ Using simulated historical data (S3 temporarily unavailable)")
+                                    change = bikes_value - current_bikes_int
+                                if change > 0:
+                                    delta_html = f"<span class=\"metric-badge metric-badge--positive\">+{change} vs now</span>"
+                                elif change < 0:
+                                    delta_html = f"<span class=\"metric-badge metric-badge--negative\">{change:+d} vs now</span>"
+                                else:
+                                    delta_html = "<span class=\"metric-badge metric-badge--neutral\">No change</span>"
+
+                                detail_html = f"{delta_html}<span>Compared to current count</span>"
+
+                                column.markdown(
+                                    _metric_card(
+                                        f"{time_label} (Paris)",
+                                        html.escape(str(bikes_value)),
+                                        detail_html,
+                                    ),
+                                    unsafe_allow_html=True,
+                                )
+                        
+                        # No additional technical metadata displayed here to keep the panel focused on rider-facing information
                 
                 except requests.exceptions.Timeout:
-                    st.error("⏱️ **Timeout**: Server taking too long to respond (>30s)")
-                    st.info("💡 Try again in a few seconds")
+                    st.error("Timeout: the prediction service took too long to respond (>30s).")
+                    st.info("Try again in a few seconds.")
                 except requests.exceptions.RequestException as e:
-                    st.error(f"❌ **Connection error**: {str(e)}")
-                    st.info("💡 Check that FastAPI is running on http://127.0.0.1:8000")
+                    st.error(f"Connection error: {str(e)}")
+                    st.info("Check that FastAPI is running on http://127.0.0.1:8000.")
                 except Exception as e:
                     import traceback
-                    st.error(f"❌ **Error**: {str(e)}")
+                    st.error(f"Error: {str(e)}")
                     st.code(traceback.format_exc())
 
 except Exception as e:
-    st.error(f"❌ Error loading data: {e}")
-    st.info("💡 Make sure FastAPI is running on http://127.0.0.1:8000")
+    st.error(f"Error loading data: {e}")
+    st.info("Check that FastAPI is running on http://127.0.0.1:8000.")
