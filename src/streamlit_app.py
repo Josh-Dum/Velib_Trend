@@ -1230,6 +1230,22 @@ try:
             label_visibility="collapsed",
             key="station_search_select"
         )
+
+        st.markdown(
+            """
+            <p style="text-align: center; font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.45rem;">
+                <span style="display: inline-flex; align-items: center; gap: 0.45rem; justify-content: center;">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12 3a5 5 0 0 0-5 5c0 2.1 1.07 3.7 2.18 4.82.66.66.82 1.12.82 1.93v.5h4v-.5c0-.81.16-1.27.82-1.93C15.93 11.7 17 10.1 17 8a5 5 0 0 0-5-5z" stroke="#3498DB" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+                        <path d="M10 18h4" stroke="#3498DB" stroke-width="1.8" stroke-linecap="round" />
+                        <path d="M11 21h2" stroke="#3498DB" stroke-width="1.8" stroke-linecap="round" />
+                    </svg>
+                    <span>Enter a station name to review its recent bike availability and next-hour forecasts.</span>
+                </span>
+            </p>
+            """,
+            unsafe_allow_html=True,
+        )
     
     station_code_input = station_options.get(selected_station, "") if selected_station else ""
     
@@ -1515,7 +1531,7 @@ try:
         col1, col2 = st.columns(2)
         with col1:
             st.markdown("**Your Route:**")
-            st.markdown("Ruby pin = You now · Emerald wheel = Pickup station · Azure dock = Drop-off station · Violet flag = Destination")
+            st.markdown("Green pin = You now · Green bike badge = Pickup station · Green rack badge = Drop-off station · Green flag = Destination")
             if path_entries:
                 st.markdown("🟦 Bike path · 🟧 Walking segments")
         with col2:
