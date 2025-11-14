@@ -1557,97 +1557,95 @@ try:
             current_docks = selected_station_row['numdocksavailable']
             capacity = selected_station_row['capacity']
 
-            if not st.session_state.get("_station_section_css"):
-                st.markdown(
-                    """
-                    <style>
-                        .station-summary-card {
-                            background: var(--bg-card);
-                            border: 1px solid var(--border-color);
-                            border-radius: 12px;
-                            padding: 1.4rem 1.6rem;
-                            margin: 1.8rem 0 1.2rem 0;
-                        }
-                        .station-summary-card h2 {
-                            margin: 0;
-                            font-size: 1.65rem;
-                            color: var(--text-primary);
-                            font-weight: 600;
-                        }
-                        .station-summary-card p {
-                            margin: 0.45rem 0 0 0;
-                            font-size: 0.95rem;
-                            color: var(--text-secondary);
-                        }
-                        .metric-card {
-                            background: var(--bg-card);
-                            border: 1px solid var(--border-color);
-                            border-radius: 12px;
-                            padding: 1.1rem 1rem 1.2rem 1rem;
-                            text-align: center;
-                            transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
-                        }
-                        .metric-card__label {
-                            font-size: 0.72rem;
-                            text-transform: uppercase;
-                            letter-spacing: 0.09em;
-                            color: var(--text-secondary);
-                            font-weight: 600;
-                        }
-                        .metric-card__value {
-                            margin-top: 0.35rem;
-                            font-size: 1.6rem;
-                            font-weight: 600;
-                            color: var(--text-primary);
-                        }
-                        .metric-card__detail {
-                            margin-top: 0.55rem;
-                            font-size: 0.85rem;
-                            color: var(--text-secondary);
-                            display: flex;
-                            align-items: center;
-                            justify-content: center;
-                            gap: 0.45rem;
-                            flex-wrap: wrap;
-                        }
-                        .metric-badge {
-                            display: inline-flex;
-                            align-items: center;
-                            justify-content: center;
-                            padding: 0.25rem 0.75rem;
-                            border-radius: 999px;
-                            font-weight: 600;
-                            font-size: 0.85rem;
-                        }
-                        .metric-badge--positive {
-                            background: rgba(93, 187, 99, 0.16);
-                            color: #2F855A;
-                        }
-                        .metric-badge--neutral {
-                            background: rgba(243, 156, 18, 0.18);
-                            color: #8C5A14;
-                        }
-                        .metric-badge--negative {
-                            background: rgba(231, 76, 60, 0.18);
-                            color: #9B2C2C;
-                        }
-                        .metric-card--positive {
-                            background: linear-gradient(135deg, rgba(93, 187, 99, 0.18), rgba(93, 187, 99, 0.08));
-                            border-color: rgba(93, 187, 99, 0.45);
-                        }
-                        .metric-card--warning {
-                            background: linear-gradient(135deg, rgba(243, 156, 18, 0.2), rgba(243, 156, 18, 0.08));
-                            border-color: rgba(243, 156, 18, 0.45);
-                        }
-                        .metric-card--negative {
-                            background: linear-gradient(135deg, rgba(231, 76, 60, 0.22), rgba(231, 76, 60, 0.1));
-                            border-color: rgba(231, 76, 60, 0.45);
-                        }
-                    </style>
-                    """,
-                    unsafe_allow_html=True,
-                )
-                st.session_state["_station_section_css"] = True
+            st.markdown(
+                """
+                <style>
+                    .station-summary-card {
+                        background: var(--bg-card);
+                        border: 1px solid var(--border-color);
+                        border-radius: 12px;
+                        padding: 1.4rem 1.6rem;
+                        margin: 1.8rem 0 1.2rem 0;
+                    }
+                    .station-summary-card h2 {
+                        margin: 0;
+                        font-size: 1.65rem;
+                        color: var(--text-primary);
+                        font-weight: 600;
+                    }
+                    .station-summary-card p {
+                        margin: 0.45rem 0 0 0;
+                        font-size: 0.95rem;
+                        color: var(--text-secondary);
+                    }
+                    .metric-card {
+                        background: var(--bg-card);
+                        border: 1px solid var(--border-color);
+                        border-radius: 12px;
+                        padding: 1.1rem 1rem 1.2rem 1rem;
+                        text-align: center;
+                        transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+                    }
+                    .metric-card__label {
+                        font-size: 0.72rem;
+                        text-transform: uppercase;
+                        letter-spacing: 0.09em;
+                        color: var(--text-secondary);
+                        font-weight: 600;
+                    }
+                    .metric-card__value {
+                        margin-top: 0.35rem;
+                        font-size: 1.6rem;
+                        font-weight: 600;
+                        color: var(--text-primary);
+                    }
+                    .metric-card__detail {
+                        margin-top: 0.55rem;
+                        font-size: 0.85rem;
+                        color: var(--text-secondary);
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        gap: 0.45rem;
+                        flex-wrap: wrap;
+                    }
+                    .metric-badge {
+                        display: inline-flex;
+                        align-items: center;
+                        justify-content: center;
+                        padding: 0.25rem 0.75rem;
+                        border-radius: 999px;
+                        font-weight: 600;
+                        font-size: 0.85rem;
+                    }
+                    .metric-badge--positive {
+                        background: rgba(93, 187, 99, 0.16);
+                        color: #2F855A;
+                    }
+                    .metric-badge--neutral {
+                        background: rgba(243, 156, 18, 0.18);
+                        color: #8C5A14;
+                    }
+                    .metric-badge--negative {
+                        background: rgba(231, 76, 60, 0.18);
+                        color: #9B2C2C;
+                    }
+                    .metric-card--positive {
+                        background: linear-gradient(135deg, rgba(93, 187, 99, 0.18), rgba(93, 187, 99, 0.08));
+                        border-color: rgba(93, 187, 99, 0.45);
+                    }
+                    .metric-card--warning {
+                        background: linear-gradient(135deg, rgba(243, 156, 18, 0.2), rgba(243, 156, 18, 0.08));
+                        border-color: rgba(243, 156, 18, 0.45);
+                    }
+                    .metric-card--negative {
+                        background: linear-gradient(135deg, rgba(231, 76, 60, 0.22), rgba(231, 76, 60, 0.1));
+                        border-color: rgba(231, 76, 60, 0.45);
+                    }
+                </style>
+                """,
+                unsafe_allow_html=True,
+            )
 
             def _safe_int(value: object, default: int = 0) -> int:
                 try:
@@ -1893,7 +1891,8 @@ try:
                             },
                             xaxis_title="Time (Paris local time)",
                             yaxis_title="Available bikes",
-                            hovermode='x unified',
+                            hovermode='x unified',  # keep single tooltip layout for consistency
+                            hoverdistance=6,  # tight tolerance keeps unrelated future points out of the tooltip
                             showlegend=True,
                             legend=dict(
                                 orientation="h",
