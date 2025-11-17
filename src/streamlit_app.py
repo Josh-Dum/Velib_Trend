@@ -31,6 +31,20 @@ AI_PREDICTION_ICON = textwrap.dedent(
         """
 ).strip()
 
+PREDICTION_UNCERTAINTY_BANDS = {
+    "T+1h": 2.95,
+    "T+2h": 3.39,
+    "T+3h": 3.76,
+}
+
+
+def compute_uncertainty_bounds(horizon: str, predicted_value: float) -> Tuple[float, float]:
+    """Return lower/upper bounds using documented MAE margins."""
+    margin = PREDICTION_UNCERTAINTY_BANDS.get(horizon, 3.0)
+    lower = max(0.0, predicted_value - margin)
+    upper = predicted_value + margin
+    return lower, upper
+
 
 def _svg_data_uri(svg: str) -> str:
     """Return a base64 data URI for an inline SVG string."""
@@ -767,6 +781,44 @@ st.markdown("""
         margin: 1.5rem 0 1rem 0;
     }
 
+    .linkedin-cta-wrapper {
+        display: flex;
+        justify-content: center;
+        margin: 1rem 0 2rem 0;
+    }
+    .linkedin-cta {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.6rem;
+        padding: 0.5rem 1.1rem;
+        border-radius: 999px;
+        border: 1px solid var(--border-color);
+        background: rgba(240, 242, 246, 0.8);
+        color: var(--text-secondary);
+        font-size: 0.9rem;
+        font-weight: 500;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
+    }
+    .linkedin-cta__badge {
+        color: var(--text-primary);
+        font-weight: 600;
+    }
+    .linkedin-cta__link {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        color: var(--accent-blue);
+        text-decoration: none;
+        font-weight: 600;
+    }
+    .linkedin-cta__link svg {
+        width: 18px;
+        height: 18px;
+    }
+    .linkedin-cta__link:hover {
+        color: var(--accent-blue-dark);
+    }
+
     .planner-progress-card {
         border: 1px solid rgba(93, 187, 99, 0.35);
         background: rgba(93, 187, 99, 0.08);
@@ -839,6 +891,22 @@ st.markdown("""
 # Header - clean and professional
 st.markdown('<h1 class="main-title">Velib Trend</h1>', unsafe_allow_html=True)
 st.markdown('<p class="subtitle">Real-time availability & AI-powered predictions for Paris bike-sharing</p>', unsafe_allow_html=True)
+st.markdown(
+    """
+    <div class="linkedin-cta-wrapper">
+        <div class="linkedin-cta">
+            <span class="linkedin-cta__badge">Made by Joshua Dumont</span>
+            <a class="linkedin-cta__link" href="https://www.linkedin.com/in/dumont-joshua/" target="_blank" rel="noopener noreferrer">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false">
+                    <path d="M19 0H5C3.35 0 2 1.35 2 3v18c0 1.65 1.35 3 3 3h14c1.65 0 3-1.35 3-3V3c0-1.65-1.35-3-3-3ZM8.34 19.5H5.67V9h2.67v10.5ZM7 7.5c-.85 0-1.53-.7-1.53-1.56 0-.85.68-1.54 1.53-1.54s1.53.69 1.53 1.54c0 .86-.68 1.56-1.53 1.56Zm12.5 12h-2.66v-5.1c0-1.22-.02-2.79-1.7-2.79-1.7 0-1.96 1.33-1.96 2.7v5.19H10.5V9h2.55v1.43h.04c.36-.69 1.26-1.43 2.59-1.43 2.77 0 3.3 1.82 3.3 4.19v6.31Z"/>
+                </svg>
+                LinkedIn
+            </a>
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 st.markdown("---")
 
 validate = True  # Always request backend validation now that advanced options are gone
@@ -1840,6 +1908,7 @@ try:
                     # Extract data
                     historical = pred_data.get('historical_24h', [])
                     predictions_dict = pred_data.get('predictions', {})
+                    prediction_uncertainty: Dict[str, Dict[str, int]] = {}
                     
                     # Check if we have data
                     if not historical:
@@ -1906,6 +1975,9 @@ try:
                         if predictions_dict:
                             pred_times = []
                             pred_bikes = []
+                            pred_labels = []
+                            pred_lower_bounds = []
+                            pred_upper_bounds = []
                             
                             for key in ['T+1h', 'T+2h', 'T+3h']:
                                 if key in predictions_dict:
@@ -1921,6 +1993,15 @@ try:
                                         
                                         pred_times.append(dt_paris)
                                         pred_bikes.append(bikes_val)
+                                        pred_labels.append(key)
+                                        lower_bound, upper_bound = compute_uncertainty_bounds(key, bikes_val)
+                                        pred_lower_bounds.append(lower_bound)
+                                        pred_upper_bounds.append(upper_bound)
+                                        prediction_uncertainty[key] = {
+                                            "lower": max(0, int(round(lower_bound))),
+                                            "upper": int(round(upper_bound)),
+                                            "margin": int(round(upper_bound - bikes_val))
+                                        }
                                     except Exception as e:
                                         # Skip invalid prediction
                                         continue
@@ -1962,6 +2043,20 @@ try:
                                         hoverinfo='skip'
                                     ))
                                 
+                                # Add translucent cone representing MAE-based uncertainty
+                                band_x = pred_times + pred_times[::-1]
+                                band_y = pred_upper_bounds + pred_lower_bounds[::-1]
+                                fig.add_trace(go.Scatter(
+                                    x=band_x,
+                                    y=band_y,
+                                    fill='toself',
+                                    fillcolor='rgba(52, 152, 219, 0.16)',
+                                    line=dict(color='rgba(52, 152, 219, 0.05)'),
+                                    name='Prediction ± MAE',
+                                    hoverinfo='skip',
+                                    legendgroup='forecast'
+                                ))
+
                                 # Add predictions trace with smooth curve
                                 fig.add_trace(go.Scatter(
                                     x=pred_times,
@@ -1970,7 +2065,8 @@ try:
                                     name='AI Predictions',
                                     line=dict(color='#3498DB', width=3, shape='spline'),
                                     marker=dict(size=10, symbol='diamond', color='#3498DB'),
-                                    hovertemplate='<b>%{x|%H:%M}</b><br>Predicted: %{y} bikes<extra></extra>'
+                                    hovertemplate='<b>%{x|%H:%M}</b><br>Predicted: %{y} bikes<extra></extra>',
+                                    legendgroup='forecast'
                                 ))
                             elif pred_times:
                                 st.warning("Prediction data contained invalid timestamps. Skipping those points.")
@@ -2054,7 +2150,13 @@ try:
                                 else:
                                     delta_html = "<span class=\"metric-badge metric-badge--neutral\">No change</span>"
 
-                                detail_html = f"{delta_html}<span>Compared to current count</span>"
+                                detail_bits = [delta_html, "<span>Compared to current count</span>"]
+                                margin_data = prediction_uncertainty.get(key)
+                                if margin_data:
+                                    margin_value = margin_data.get("margin")
+                                    if isinstance(margin_value, (int, float)):
+                                        detail_bits.append(f"<span>±{int(round(margin_value))} bikes (MAE)</span>")
+                                detail_html = "".join(detail_bits)
 
                                 column.markdown(
                                     _metric_card(
