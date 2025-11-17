@@ -500,6 +500,42 @@ def build_timeline_html(events: List[Dict]) -> Tuple[str, str]:
     return style_block, markup
 
 
+def render_planner_progress(
+    placeholder,
+    percent: int,
+    title: str,
+    subtitle: str,
+) -> None:
+    """Display a single progress card with consistent styling."""
+    if placeholder is None:
+        return
+    pct = max(0, min(100, int(percent)))
+    safe_title = html.escape(title)
+    safe_subtitle = html.escape(subtitle)
+    spinner_classes = ["planner-progress-spinner"]
+    if pct >= 100:
+        spinner_classes.append("is-hidden")
+    spinner_html = f'<span class="{" ".join(spinner_classes)}" aria-hidden="true"></span>'
+    placeholder.markdown(
+        f"""
+        <div class="planner-progress-card">
+            <div class="planner-progress-head">
+                <span class="planner-progress-title">{safe_title}</span>
+                <span class="planner-progress-status">
+                    <span class="planner-progress-percent">{pct}%</span>
+                    {spinner_html}
+                </span>
+            </div>
+            <p class="planner-progress-subtitle">{safe_subtitle}</p>
+            <div class="planner-progress-track">
+                <div class="planner-progress-fill" style="width:{pct}%"></div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 # Configure page
 st.set_page_config(
     page_title="Velib Trend — Paris Bike Predictions",
@@ -730,6 +766,73 @@ st.markdown("""
         color: var(--text-primary);
         margin: 1.5rem 0 1rem 0;
     }
+
+    .planner-progress-card {
+        border: 1px solid rgba(93, 187, 99, 0.35);
+        background: rgba(93, 187, 99, 0.08);
+        border-radius: 18px;
+        padding: 0.85rem 1.25rem;
+        margin: 0.8rem auto 0;
+        max-width: 640px;
+        box-shadow: none;
+    }
+    .planner-progress-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 0.25rem;
+    }
+    .planner-progress-status {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        min-width: 64px;
+        justify-content: flex-end;
+    }
+    .planner-progress-title {
+        font-size: 0.95rem;
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+    .planner-progress-percent {
+        font-size: 0.9rem;
+        font-weight: 600;
+        color: var(--primary-green);
+    }
+    .planner-progress-subtitle {
+        margin: 0.35rem 0 0 0;
+        color: var(--text-secondary);
+        font-size: 0.85rem;
+    }
+    .planner-progress-track {
+        width: 100%;
+        height: 8px;
+        border-radius: 999px;
+        background: rgba(93, 187, 99, 0.2);
+        overflow: hidden;
+    }
+    .planner-progress-fill {
+        height: 100%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, #5DBB63 0%, #34A853 100%);
+        transition: width 0.25s ease;
+    }
+    .planner-progress-spinner {
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        border: 2px solid rgba(93, 187, 99, 0.35);
+        border-top-color: var(--primary-green);
+        animation: planner-progress-spin 0.8s linear infinite;
+    }
+    .planner-progress-spinner.is-hidden {
+        opacity: 0;
+        animation: none;
+    }
+    @keyframes planner-progress-spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -860,30 +963,35 @@ try:
             st.error("❌ Start and destination are the same. Please enter different addresses.")
         else:
             try:
-                # Step 1: Geocode addresses with progress
-                progress_text = st.empty()
-                progress_text.info("🔎 Finding your locations… (~1s)")
+                progress_placeholder = st.empty()
+
+                def update_progress(percent: int, title: str, subtitle: str) -> None:
+                    render_planner_progress(
+                        progress_placeholder,
+                        percent,
+                        title,
+                        subtitle,
+                    )
+
+                update_progress(5, "Initializing route request", "Collecting start and end inputs…")
                 
                 start_lat, start_lon = geocode_address(start_address)
                 dest_lat, dest_lon = geocode_address(dest_address)
                 
                 if not start_lat or not dest_lat:
-                    progress_text.empty()
+                    progress_placeholder.empty()
                     if not start_lat:
                         st.error(f"❌ Could not find location: '{start_address}'")
                     if not dest_lat:
                         st.error(f"❌ Could not find location: '{dest_address}'")
                     st.info("💡 **Tip:** Try being more specific (add 'Paris' or postal code like '75001')")
                 else:
-                    progress_text.success("✅ Locations found")
-                    
-                    # Step 2: Plan route
-                    progress_text.info("Calculating best stations… (~1s)")
+                    update_progress(30, "Addresses confirmed", "Scanning for the most relevant stations…")
                     route = plan_route(start_lat, start_lon, dest_lat, dest_lon, df)
                     
                     start_station = route['start_station']
                     end_station = route['end_station']
-                    progress_text.success("✅ Route ready")
+                    update_progress(50, "Stations selected", "Preparing availability forecasts for both stops…")
                     
                     route_segments = build_route_segments(
                         start_lat,
@@ -908,12 +1016,11 @@ try:
                     
                     # Check if same station
                     if start_station['stationcode'] == end_station['stationcode']:
-                        progress_text.empty()
+                        progress_placeholder.empty()
                         st.warning("⚠️ **Close Proximity**: Start and destination are very close - same station recommended!")
                         st.info(f"🚴 **Suggested Station:** {start_station['name']}")
                     else:
-                        # Step 3: Get predictions in parallel
-                        progress_text.info("🔮 Fetching availability predictions… (~15-30s)")
+                        update_progress(65, "Predictions running", "Estimating bikes and docks across the trip window…")
                         try:
                             # Use ThreadPoolExecutor to run both predictions simultaneously
                             with ThreadPoolExecutor(max_workers=2) as executor:
@@ -934,21 +1041,18 @@ try:
                                 start_pred = future_start.result()
                                 end_pred = future_end.result()
                             
-                            progress_text.success("✅ Predictions received")
-                            
-                            # Step 4: Get verdict
-                            progress_text.info("🎯 Reviewing journey confidence… (~1s)")
+                            update_progress(85, "Final quality check", "Validating the confidence score before publishing…")
                             verdict = get_journey_verdict(
                                 start_pred['bikes_predicted'],
                                 end_pred['docks_predicted']
                             )
                             
-                            progress_text.success("✅ Journey analysis complete")
-                            time.sleep(0.5)  # Brief pause to show completion
-                            progress_text.empty()
+                            update_progress(100, "Plan ready", "Recommendation set compiled successfully")
+                            time.sleep(0.5)
+                            progress_placeholder.empty()
                         
                         except requests.exceptions.Timeout:
-                            progress_text.empty()
+                            progress_placeholder.empty()
                             st.error("⏱️ **Timeout**: Prediction service is taking too long (>40s)")
                             st.warning("⚠️ **Route information** (without predictions):")
                             # Show route info without predictions
@@ -984,7 +1088,7 @@ try:
                             end_pred = None
                         
                         except requests.exceptions.RequestException as e:
-                            progress_text.empty()
+                            progress_placeholder.empty()
                             st.error(f"❌ **Connection error**: {str(e)}")
                             st.info("💡 Make sure FastAPI is running on http://127.0.0.1:8000")
                             verdict = None
@@ -1061,7 +1165,7 @@ try:
                                     "body": f"Dock the bike here. Forecast shows <strong>{predicted_docks}</strong> free docks.",
                                     "prediction_label": "AI forecast",
                                     "prediction_icon": AI_PREDICTION_ICON,
-                                    "prediction_html": f"<span class=\"timeline-prediction-number\">{predicted_docks}</span> docks open on arrival",
+                                    "prediction_html": f"<span class=\"timeline-prediction-number\">{predicted_docks}</span> docks free on arrival",
                                     "chips": [
                                         f"Walk {format_minutes(route['walk_from_end_min'])}",
                                         f"{format_distance(route['walk_from_end_km'])}"
