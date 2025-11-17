@@ -1280,6 +1280,10 @@ try:
     # ============================================================
     # STATION SEARCH BAR (above the map)
     # ============================================================
+    def _handle_station_search_change() -> None:
+        """Reset planned route overlay when focusing on single-station search."""
+        if st.session_state.get('route_data') is not None:
+            st.session_state['route_data'] = None
     
     # Create searchable options
     station_options = {}
@@ -1332,7 +1336,8 @@ try:
             help="Start typing a station name (e.g., 'République', 'Bastille', 'Louvre')",
             placeholder="Type to search...",
             label_visibility="collapsed",
-            key="station_search_select"
+            key="station_search_select",
+            on_change=_handle_station_search_change
         )
 
         st.markdown(
