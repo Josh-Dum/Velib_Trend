@@ -819,6 +819,35 @@ st.markdown("""
         color: var(--accent-blue-dark);
     }
 
+    .github-cta {
+        display: flex;
+        justify-content: center;
+        margin: 0.5rem 0 2.5rem 0;
+    }
+    .github-cta a {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.55rem 1.2rem;
+        border-radius: 999px;
+        border: 1px solid var(--border-color);
+        background: #0d1117;
+        color: #f4f6fb;
+        font-weight: 600;
+        text-decoration: none;
+        box-shadow: 0 4px 14px rgba(0,0,0,0.12);
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    .github-cta a:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 6px 16px rgba(0,0,0,0.18);
+    }
+    .github-cta svg {
+        width: 18px;
+        height: 18px;
+        fill: currentColor;
+    }
+
     .planner-progress-card {
         border: 1px solid rgba(93, 187, 99, 0.35);
         background: rgba(93, 187, 99, 0.08);
@@ -2179,6 +2208,21 @@ try:
                     import traceback
                     st.error(f"Error: {str(e)}")
                     st.code(traceback.format_exc())
+
+    st.markdown("---")
+    st.markdown(
+        """
+        <div class="github-cta">
+            <a href="https://github.com/Josh-Dum/Velib_Trend" target="_blank" rel="noopener noreferrer">
+                <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                    <path d="M8 0C3.58 0 0 3.58 0 8a8 8 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2 0-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.62 7.62 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.19 0 .21.15.46.55.38A8 8 0 0 0 16 8c0-4.42-3.58-8-8-8Z"></path>
+                </svg>
+                For more project details, visit GitHub
+            </a>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 except Exception as e:
     st.error(f"Error loading data: {e}")
