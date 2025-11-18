@@ -1302,7 +1302,7 @@ try:
                             st.markdown(timeline_markup, unsafe_allow_html=True)
                             
                             # Google Maps integration button
-                            st.markdown('<hr style="margin: 0.8rem 0; border: none; border-top: 1px solid var(--border-color);">', unsafe_allow_html=True)
+                            st.markdown('<hr style="margin: 1.5rem 0; border: none; border-top: 1px solid var(--border-color);">', unsafe_allow_html=True)
                             
                             # Create Google Maps URL with waypoints (API format)
                             origin_coords = f"{start_lat},{start_lon}"
