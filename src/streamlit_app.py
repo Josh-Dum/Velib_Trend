@@ -8,7 +8,6 @@ from typing import List, Dict, Tuple, Optional
 import requests
 import pandas as pd
 import streamlit as st
-import streamlit.components.v1 as components
 import pydeck as pdk
 import numpy as np
 import plotly.graph_objects as go
@@ -275,243 +274,53 @@ def format_distance(kilometers: float) -> str:
     return f"{kilometers:.1f} km"
 
 
-def build_timeline_html(events: List[Dict]) -> Tuple[str, str]:
-    """Render timeline styling and markup for the journey timeline."""
-    blocks = []
+def build_timeline_html(events: List[Dict]) -> str:
+    """Return HTML markup for the journey timeline."""
+    lines: List[str] = ['<div class="timeline-container">']
     event_count = len(events)
     for idx, event in enumerate(events):
         top_hidden = "hidden" if idx == 0 else ""
         bottom_hidden = "hidden" if idx == event_count - 1 else ""
-        chips_container = ""
-        if event.get("chips"):
-            chips = "".join(f'<span class="timeline-chip">{chip}</span>' for chip in event["chips"])
-            chips_container = f'<div class="timeline-chips">{chips}</div>'
-        subtitle_html = f'<div class="timeline-subtitle">{event["subtitle"]}</div>' if event.get("subtitle") else ""
-        body_html = f'<div class="timeline-body">{event["body"]}</div>' if event.get("body") else ""
-        prediction_html = ""
+        lines.append('<div class="timeline-step">')
+        lines.append(f'<div class="timeline-time">{event["time"]}</div>')
+        lines.append('<div class="timeline-axis">')
+        lines.append(f'<div class="timeline-line {top_hidden}"></div>')
+        lines.append(f'<div class="timeline-dot">{event["icon"]}</div>')
+        lines.append(f'<div class="timeline-line {bottom_hidden}"></div>')
+        lines.append('</div>')  # close axis
+        lines.append('<div class="timeline-content">')
+        lines.append(f'<div class="timeline-title">{event["title"]}</div>')
+
+        if event.get("subtitle"):
+            lines.append(f'<div class="timeline-subtitle">{event["subtitle"]}</div>')
+        if event.get("body"):
+            lines.append(f'<div class="timeline-body">{event["body"]}</div>')
+
         if event.get("prediction_html"):
             prediction_icon = event.get("prediction_icon", "🤖")
             prediction_label = html.escape(event.get("prediction_label", "AI forecast"))
             prediction_content = event["prediction_html"]
-            prediction_html = textwrap.dedent(
-                f"""
-                <div class="timeline-prediction">
-                    <div class="timeline-prediction-icon">{prediction_icon}</div>
-                    <div class="timeline-prediction-text">
-                        <div class="timeline-prediction-label">{prediction_label}</div>
-                        <div class="timeline-prediction-value">{prediction_content}</div>
-                    </div>
-                </div>
-                """
-            ).strip()
-        block_html = textwrap.dedent(
-            f"""
-            <div class="timeline-step">
-                <div class="timeline-time">{event["time"]}</div>
-                <div class="timeline-axis">
-                    <div class="timeline-line {top_hidden}"></div>
-                    <div class="timeline-dot">{event["icon"]}</div>
-                    <div class="timeline-line {bottom_hidden}"></div>
-                </div>
-                <div class="timeline-content">
-                    <div class="timeline-title">{event["title"]}</div>
-                    {subtitle_html}
-                    {body_html}
-                    {prediction_html}
-                    {chips_container}
-                </div>
-            </div>
-            """
-        ).strip()
-        blocks.append(block_html)
+            lines.extend(
+                [
+                    '<div class="timeline-prediction">',
+                    f'<div class="timeline-prediction-icon">{prediction_icon}</div>',
+                    '<div class="timeline-prediction-text">',
+                    f'<div class="timeline-prediction-label">{prediction_label}</div>',
+                    f'<div class="timeline-prediction-value">{prediction_content}</div>',
+                    '</div>',
+                    '</div>',
+                ]
+            )
 
-    timeline_body = "\n".join(blocks)
-    style_block = textwrap.dedent(
-        """
-        <style>
-            :root {
-                --primary-green: #5DBB63;
-                --accent-blue: #3498DB;
-                --text-primary: #262730;
-                --text-secondary: #6B7280;
-                --bg-card: #F0F2F6;
-                --border-color: #E5E7EB;
-            }
-            html, body {
-                margin: 0;
-                padding: 0;
-                background: transparent;
-                font-family: FONT_STACK_VALUE;
-                color: var(--text-primary);
-            }
-            .timeline-container {
-                background: #ffffff;
-                border: 1px solid var(--border-color);
-                border-radius: 12px;
-                padding: 1.7rem 1.9rem;
-                box-shadow: 0 20px 50px rgba(38, 39, 48, 0.06);
-                margin-top: 1.3rem;
-                font-family: FONT_STACK_VALUE;
-            }
-            .timeline-step {
-                display: grid;
-                grid-template-columns: 82px 34px 1fr;
-                column-gap: 1.35rem;
-                align-items: flex-start;
-            }
-            .timeline-step + .timeline-step {
-                margin-top: 1.35rem;
-            }
-            .timeline-time {
-                text-align: right;
-                font-weight: 600;
-                color: var(--text-primary);
-                font-size: 0.95rem;
-                padding-top: 0.25rem;
-            }
-            .timeline-axis {
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                height: 100%;
-            }
-            .timeline-line {
-                width: 3px;
-                background: linear-gradient(180deg, rgba(52, 152, 219, 0.35), rgba(93, 187, 99, 0.45));
-                flex-grow: 1;
-            }
-            .timeline-line.hidden {
-                visibility: hidden;
-                flex-grow: 0;
-            }
-            .timeline-dot {
-                width: 28px;
-                height: 28px;
-                border-radius: 50%;
-                background: #ffffff;
-                border: 3px solid var(--accent-blue);
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                font-size: 0.9rem;
-                color: var(--accent-blue);
-                box-shadow: 0 0 0 5px rgba(52, 152, 219, 0.14);
-                margin: 0.25rem 0;
-            }
-            .timeline-content {
-                background: var(--bg-card);
-                border-radius: 12px;
-                padding: 1rem 1.25rem;
-                border: 1px solid rgba(52, 152, 219, 0.15);
-                box-shadow: 0 12px 28px rgba(37, 99, 235, 0.07);
-            }
-            .timeline-title {
-                font-weight: 600;
-                font-size: 1.05rem;
-                color: var(--text-primary);
-            }
-            .timeline-subtitle {
-                font-size: 0.78rem;
-                color: var(--text-secondary);
-                text-transform: uppercase;
-                letter-spacing: 0.08em;
-                margin-top: 0.15rem;
-            }
-            .timeline-body {
-                font-size: 0.95rem;
-                color: var(--text-primary);
-                margin-top: 0.65rem;
-                line-height: 1.55;
-            }
-            .timeline-chips {
-                display: flex;
-                flex-wrap: wrap;
-                gap: 0.45rem;
-                margin-top: 0.85rem;
-            }
-            .timeline-chip {
-                background: rgba(52, 152, 219, 0.14);
-                color: var(--accent-blue);
-                font-weight: 600;
-                font-size: 0.78rem;
-                padding: 0.35rem 0.75rem;
-                border-radius: 999px;
-                letter-spacing: 0.01em;
-            }
-            .timeline-prediction {
-                margin-top: 0.85rem;
-                display: inline-flex;
-                align-items: center;
-                gap: 0.65rem;
-                padding: 0.55rem 1.05rem;
-                border-radius: 14px;
-                background: linear-gradient(135deg, rgba(52, 152, 219, 0.18), rgba(93, 187, 99, 0.26));
-                border: 1px solid rgba(52, 152, 219, 0.18);
-                box-shadow: 0 10px 22px rgba(52, 152, 219, 0.12);
-                color: var(--text-primary);
-            }
-            .timeline-prediction-icon {
-                width: 34px;
-                height: 34px;
-                border-radius: 50%;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                background: white;
-                color: var(--accent-blue);
-                box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.18);
-            }
-            .timeline-prediction-icon svg {
-                display: block;
-                width: 24px;
-                height: 24px;
-            }
-            .timeline-prediction-text {
-                display: flex;
-                flex-direction: column;
-                gap: 0.15rem;
-            }
-            .timeline-prediction-label {
-                text-transform: uppercase;
-                font-size: 0.68rem;
-                letter-spacing: 0.15em;
-                color: rgba(38, 39, 48, 0.6);
-                font-weight: 600;
-            }
-            .timeline-prediction-value {
-                font-size: 0.98rem;
-                font-weight: 600;
-                color: var(--accent-blue);
-            }
-            .timeline-prediction-number {
-                font-size: 1.25rem;
-                font-weight: 700;
-                margin-right: 0.35rem;
-                display: inline-block;
-            }
-            @media (max-width: 768px) {
-                .timeline-container {
-                    padding: 1.2rem 1.1rem;
-                }
-                .timeline-step {
-                    grid-template-columns: 64px 30px 1fr;
-                    column-gap: 1rem;
-                }
-                .timeline-content {
-                    padding: 0.85rem 1rem;
-                }
-            }
-        </style>
-        """
-    ).replace("FONT_STACK_VALUE", TIMELINE_FONT_STACK).strip()
-    markup = textwrap.dedent(
-        f"""
-        <div class="timeline-container">
-            {timeline_body}
-        </div>
-        """
-    ).strip()
-    return style_block, markup
+        if event.get("chips"):
+            chips = "".join(f'<span class="timeline-chip">{chip}</span>' for chip in event["chips"])
+            lines.append(f'<div class="timeline-chips">{chips}</div>')
+
+        lines.append('</div>')  # close timeline-content
+        lines.append('</div>')  # close timeline-step
+
+    lines.append('</div>')  # close timeline-container
+    return "\n".join(lines)
 
 
 def render_planner_progress(
@@ -914,6 +723,217 @@ st.markdown("""
         from { transform: rotate(0deg); }
         to { transform: rotate(360deg); }
     }
+
+    /* ========== JOURNEY TIMELINE ========== */
+    .timeline-container {
+        background: #ffffff;
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        padding: 1.6rem 1.8rem;
+        box-shadow: 0 20px 50px rgba(38, 39, 48, 0.06);
+        margin: 1rem auto 0;
+        font-family: 'Inter', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+        width: min(100%, 760px);
+        box-sizing: border-box;
+        overflow: hidden;
+    }
+    .timeline-step {
+        display: grid;
+        grid-template-columns: 82px 34px 1fr;
+        column-gap: 1.35rem;
+        align-items: flex-start;
+    }
+    .timeline-step + .timeline-step {
+        margin-top: 1.35rem;
+    }
+    .timeline-time {
+        text-align: right;
+        font-weight: 600;
+        color: var(--text-primary);
+        font-size: 0.95rem;
+        padding-top: 0.25rem;
+    }
+    .timeline-axis {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        height: 100%;
+    }
+    .timeline-line {
+        width: 3px;
+        background: linear-gradient(180deg, rgba(52, 152, 219, 0.35), rgba(93, 187, 99, 0.45));
+        flex-grow: 1;
+    }
+    .timeline-line.hidden {
+        visibility: hidden;
+        flex-grow: 0;
+    }
+    .timeline-dot {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        background: #ffffff;
+        border: 3px solid var(--accent-blue);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.9rem;
+        color: var(--accent-blue);
+        box-shadow: 0 0 0 5px rgba(52, 152, 219, 0.14);
+        margin: 0.25rem 0;
+    }
+    .timeline-content {
+        background: var(--bg-card);
+        border-radius: 12px;
+        padding: 1rem 1.25rem;
+        border: 1px solid rgba(52, 152, 219, 0.15);
+        box-shadow: 0 12px 28px rgba(37, 99, 235, 0.07);
+    }
+    .timeline-title {
+        font-weight: 600;
+        font-size: 1.05rem;
+        color: var(--text-primary);
+    }
+    .timeline-subtitle {
+        font-size: 0.78rem;
+        color: var(--text-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        margin-top: 0.15rem;
+    }
+    .timeline-body {
+        font-size: 0.95rem;
+        color: var(--text-primary);
+        margin-top: 0.65rem;
+        line-height: 1.55;
+    }
+    .timeline-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.45rem;
+        margin-top: 0.85rem;
+    }
+    .timeline-chip {
+        background: rgba(52, 152, 219, 0.14);
+        color: var(--accent-blue);
+        font-weight: 600;
+        font-size: 0.78rem;
+        padding: 0.35rem 0.75rem;
+        border-radius: 999px;
+        letter-spacing: 0.01em;
+    }
+    .timeline-prediction {
+        margin-top: 0.85rem;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.65rem;
+        padding: 0.55rem 1.05rem;
+        border-radius: 14px;
+        background: linear-gradient(135deg, rgba(52, 152, 219, 0.18), rgba(93, 187, 99, 0.26));
+        border: 1px solid rgba(52, 152, 219, 0.18);
+        box-shadow: 0 10px 22px rgba(52, 152, 219, 0.12);
+        color: var(--text-primary);
+    }
+    .timeline-prediction-icon {
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: white;
+        color: var(--accent-blue);
+        box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.18);
+    }
+    .timeline-prediction-icon svg {
+        display: block;
+        width: 24px;
+        height: 24px;
+    }
+    .timeline-prediction-text {
+        display: flex;
+        flex-direction: column;
+        gap: 0.15rem;
+    }
+    .timeline-prediction-label {
+        text-transform: uppercase;
+        font-size: 0.68rem;
+        letter-spacing: 0.15em;
+        color: rgba(38, 39, 48, 0.6);
+        font-weight: 600;
+    }
+    .timeline-prediction-value {
+        font-size: 0.98rem;
+        font-weight: 600;
+        color: var(--accent-blue);
+    }
+    .timeline-prediction-number {
+        font-size: 1.25rem;
+        font-weight: 700;
+        margin-right: 0.35rem;
+        display: inline-block;
+    }
+    @media (max-width: 768px) {
+        .timeline-container {
+            padding: 1.1rem 1rem;
+        }
+        .timeline-step {
+            grid-template-columns: 64px 30px 1fr;
+            column-gap: 1rem;
+        }
+        .timeline-content {
+            padding: 0.85rem 1rem;
+        }
+    }
+    @media (max-width: 640px) {
+        .timeline-container {
+            padding: 0.95rem 0.8rem;
+            box-shadow: 0 12px 28px rgba(38, 39, 48, 0.08);
+            margin-top: 0.75rem;
+        }
+        .timeline-step {
+            grid-template-columns: 1fr;
+            row-gap: 0.35rem;
+        }
+        .timeline-time {
+            text-align: left;
+            font-size: 0.85rem;
+            padding-top: 0;
+        }
+        .timeline-axis {
+            display: none;
+        }
+        .timeline-content {
+            padding: 0.8rem 0.9rem;
+        }
+        .timeline-prediction {
+            width: 100%;
+            flex-wrap: wrap;
+            box-sizing: border-box;
+            margin-top: 0.65rem;
+        }
+        .timeline-prediction-icon {
+            margin-bottom: 0.3rem;
+        }
+    }
+    @media (max-width: 420px) {
+        .timeline-container {
+            padding: 0.8rem 0.7rem;
+        }
+        .timeline-prediction {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 0.4rem;
+            padding: 0.55rem 0.7rem;
+        }
+        .timeline-prediction-number {
+            font-size: 1.1rem;
+        }
+        .timeline-chip {
+            font-size: 0.7rem;
+            padding: 0.3rem 0.6rem;
+        }
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -1278,26 +1298,11 @@ try:
                                 },
                             ]
 
-                            timeline_style, timeline_markup = build_timeline_html(timeline_events)
-                            timeline_html = textwrap.dedent(
-                                f"""
-                                <!DOCTYPE html>
-                                <html>
-                                <head>
-                                    <meta charset=\"utf-8\">
-                                    {timeline_style}
-                                </head>
-                                <body>
-                                    {timeline_markup}
-                                </body>
-                                </html>
-                                """
-                            ).strip()
-                            timeline_height = max(520, 220 + len(timeline_events) * 160)
-                            components.html(timeline_html, height=timeline_height, scrolling=False)
+                            timeline_markup = build_timeline_html(timeline_events)
+                            st.markdown(timeline_markup, unsafe_allow_html=True)
                             
                             # Google Maps integration button
-                            st.markdown("---")
+                            st.markdown('<hr style="margin: 0.8rem 0; border: none; border-top: 1px solid var(--border-color);">', unsafe_allow_html=True)
                             
                             # Create Google Maps URL with waypoints (API format)
                             origin_coords = f"{start_lat},{start_lon}"
