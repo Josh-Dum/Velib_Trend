@@ -21,7 +21,7 @@ flowchart TD
     subgraph LSTM_Branch["LSTM Branch (Time Series)"]
         LSTM1["LSTM Layer 1<br/>(128 Units)"]
         LSTM2["LSTM Layer 2<br/>(64 Units)"]
-        LastStep["Extract Last Timestep"]
+        LastStep["Extract Last Hidden State<br/>(Context Vector)"]
     end
 
     subgraph Dense_Branch["Dense Branch (Fusion)"]
