@@ -7,6 +7,7 @@ import time
 from fastapi import FastAPI, HTTPException, Query
 import boto3
 from botocore.exceptions import ClientError
+from mangum import Mangum
 
 from src.fetch_live_velib import fetch_live, fetch_live_all, normalize
 from src.data_utils import validate_and_sanitize
@@ -14,6 +15,9 @@ from src.fetch_historical import get_24h_history_with_fallback
 
 
 app = FastAPI(title="Velib Trend API", version="0.1.0")
+
+# Lambda handler
+handler = Mangum(app)
 
 # SageMaker configuration
 SAGEMAKER_ENDPOINT = os.environ.get("SAGEMAKER_ENDPOINT", "velib-lstm-v3-endpoint")
