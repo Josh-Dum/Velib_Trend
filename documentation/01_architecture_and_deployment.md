@@ -12,12 +12,53 @@ To optimize costs while maintaining scalability, the project uses a **Hybrid Clo
 ### Architecture Diagram
 
 ```mermaid
-flowchart LR
-    User["User Browser"] -->|HTTPS| Frontend["Streamlit Cloud"]
-    Frontend -->|API Calls| Backend["AWS Lambda"]
-    Backend -->|Read/Write| S3["AWS S3"]
-    Backend -->|Inference| SageMaker["SageMaker Endpoint"]
-    LambdaCron["Lambda Collector"] -->|Hourly Snapshots| S3
+flowchart TB
+    subgraph Client["Client Side"]
+        User(("👤 User Browser"))
+    end
+
+    subgraph Frontend_Cloud["Streamlit Cloud"]
+        Streamlit["🖥️ Streamlit App<br/>(Frontend UI)"]
+    end
+
+    subgraph AWS_Cloud["AWS Cloud (eu-west-3)"]
+        style AWS_Cloud fill:#f9f9f9,stroke:#ff9900,stroke-width:2px
+        
+        subgraph Compute["Serverless Compute"]
+            LambdaAPI["⚡ AWS Lambda<br/>(FastAPI Backend)"]
+            LambdaCron["⏱️ AWS Lambda<br/>(Snapshot Collector)"]
+        end
+        
+        subgraph ML["Machine Learning"]
+            SageMaker["🧠 SageMaker<br/>(Serverless Inference)"]
+        end
+        
+        subgraph Storage["Data Storage"]
+            S3_Bronze[("🗄️ S3 Bucket<br/>(Raw Snapshots)")]
+            S3_Models[("📦 S3 Bucket<br/>(Model Artifacts)")]
+        end
+    end
+
+    %% Data Flow
+    User <-->|HTTPS| Streamlit
+    Streamlit <-->|REST API| LambdaAPI
+    
+    %% Backend Logic
+    LambdaAPI -->|Read History| S3_Bronze
+    LambdaAPI -->|Invoke| SageMaker
+    SageMaker -.->|Load Model| S3_Models
+    
+    %% Data Collection
+    LambdaCron -->|Hourly Write| S3_Bronze
+    
+    %% Styling
+    classDef aws fill:#FF9900,stroke:#232F3E,stroke-width:2px,color:white;
+    classDef streamlit fill:#FF4B4B,stroke:#333,stroke-width:2px,color:white;
+    classDef storage fill:#3F8624,stroke:#333,stroke-width:2px,color:white;
+    
+    class LambdaAPI,LambdaCron,SageMaker aws;
+    class Streamlit streamlit;
+    class S3_Bronze,S3_Models storage;
 ```
 
 ---

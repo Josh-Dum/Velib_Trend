@@ -9,6 +9,50 @@
 - **Performance (T+1h)**: MAE **2.95** bikes, R² **0.815**
 - **Status**: **Live on SageMaker**
 
+### Model Architecture Diagram
+
+```mermaid
+flowchart TD
+    subgraph Inputs
+        InputSeq["Sequence Input<br/>(24h History)<br/>Shape: (Batch, 24, 1)"]
+        InputStatic["Static Features<br/>(Hour, Day, Station Info)<br/>Shape: (Batch, 7)"]
+    end
+
+    subgraph LSTM_Branch["LSTM Branch (Time Series)"]
+        LSTM1["LSTM Layer 1<br/>(128 Units)"]
+        LSTM2["LSTM Layer 2<br/>(64 Units)"]
+        LastStep["Extract Last Timestep"]
+    end
+
+    subgraph Dense_Branch["Dense Branch (Fusion)"]
+        Concat["Concatenate"]
+        Dense1["Dense Layer<br/>(32 Units, ReLU)"]
+        Dropout["Dropout (0.2)"]
+        Output["Output Layer<br/>(prediction H+1, H+2, H+3)"]
+    end
+
+    %% Connections
+    InputSeq --> LSTM1
+    LSTM1 --> LSTM2
+    LSTM2 --> LastStep
+    
+    LastStep --> Concat
+    InputStatic --> Concat
+    
+    Concat --> Dense1
+    Dense1 --> Dropout
+    Dropout --> Output
+    
+    %% Styling
+    classDef input fill:#e1f5fe,stroke:#01579b,stroke-width:2px;
+    classDef lstm fill:#fff3e0,stroke:#ff6f00,stroke-width:2px;
+    classDef dense fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px;
+    
+    class InputSeq,InputStatic input;
+    class LSTM1,LSTM2,LastStep lstm;
+    class Concat,Dense1,Dropout,Output dense;
+```
+
 ### Model v4 (Best Candidate) ⚠️
 - **Trained**: Oct 28, 2025
 - **Data**: 27 days (Oct 1-28)
