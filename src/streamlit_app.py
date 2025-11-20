@@ -192,23 +192,6 @@ def get_availability_color(value):
         return "#E74C3C"  # Red
 
 
-def pct_to_marker_color(row, metric_col="metric"):
-    """
-    DEPRECATED: Use count_to_marker_color instead.
-    Convert availability percentage to RGBA color for map markers.
-    """
-    cap = row.get("capacity", 0)
-    if pd.isna(cap) or cap == 0:
-        return [44, 62, 80, 220]  # Dark gray (#2C3E50) for unknown
-    
-    v = float(row[metric_col])
-    if v < 0.3:
-        return [231, 76, 60, 220]  # Danger red (#E74C3C)
-    if v < 0.6:
-        return [243, 156, 18, 220]  # Warning amber (#F39C12)
-    return [93, 187, 99, 220]  # Success green (#5DBB63)
-
-
 def count_to_marker_color(row, mode="bike"):
     """
     Convert availability count to RGBA color for map markers (count-based).

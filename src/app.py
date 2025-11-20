@@ -293,17 +293,20 @@ def predict_station(station_code: str) -> Dict[str, Any]:
         except ClientError as e:
             error_code = e.response['Error']['Code']
             error_msg = e.response['Error']['Message']
+            print(f"SageMaker error: {error_code} - {error_msg}")
             raise HTTPException(
                 status_code=503,
-                detail=f"SageMaker error ({error_code}): {error_msg}"
+                detail="Prediction service temporarily unavailable."
             )
         except Exception as e:
+            print(f"Prediction error: {str(e)}")
             raise HTTPException(
                 status_code=500,
-                detail=f"Prediction error: {str(e)}"
+                detail="An internal error occurred."
             )
             
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"Unhandled error: {str(e)}")
+        raise HTTPException(status_code=500, detail="An internal error occurred.")

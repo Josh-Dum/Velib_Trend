@@ -512,7 +512,7 @@ def main():
         test_dataset = VelibSequenceDataset(SILVER_DIR / "sequences_test.npz")
         logger.info("")
         
-        # Log data versioning parameters (CRITICAL for comparing runs)
+        # Log data versioning parameters for experiment tracking
         mlflow.log_param("data_version", data_metadata['version'])
         mlflow.log_param("data_records", data_metadata['records'])
         mlflow.log_param("data_date_range", data_metadata['date_range'])
@@ -522,7 +522,7 @@ def main():
         mlflow.set_tag("data_version", data_metadata['version'])
         mlflow.set_tag("experiment_type", f"training_{data_metadata['version']}")
         
-        # Log feature engineering metadata (NEW in v5)
+        # Log feature engineering metadata
         mlflow.log_param("continuous_features", "hour,day_of_week,capacity,station_id,lat,lon,part_of_day,month,season")
         mlflow.log_param("binary_features", "is_weekend,is_rush_hour,is_lunch_time")
         mlflow.log_param("normalization_strategy", "StandardScaler for continuous, 0/1 for binary")
