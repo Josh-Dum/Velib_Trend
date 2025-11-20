@@ -36,9 +36,10 @@ We use `docker-compose` to replicate this architecture locally:
 ## Deployment Steps
 
 ### Backend (AWS Lambda)
-1. Build and push the backend Docker image to AWS ECR.
-2. Create/Update Lambda function using the ECR image.
-3. Enable Function URL (Auth: NONE for public API, or IAM if proxied).
+- **Status**: Deployed ✅
+- **Function Name**: `velib-api-backend`
+- **URL**: `https://uxhsjwdfkqgjmdxbmt5oidv2ca0cgejs.lambda-url.eu-west-3.on.aws/`
+- **Docs**: `https://uxhsjwdfkqgjmdxbmt5oidv2ca0cgejs.lambda-url.eu-west-3.on.aws/docs`
 
 ### Frontend (Streamlit Cloud)
 1. Push code to GitHub.
