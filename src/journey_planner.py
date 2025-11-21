@@ -31,7 +31,7 @@ OSRM_TIMEOUT = 10
 
 def geocode_address(address: str) -> Tuple[Optional[float], Optional[float]]:
     """
-    Convert address to (latitude, longitude) using Nominatim.
+    Convert address to (latitude, longitude) using Nominatim with fallback to Photon.
     Cached with LRU cache to avoid redundant API calls.
     
     Args:
@@ -39,38 +39,58 @@ def geocode_address(address: str) -> Tuple[Optional[float], Optional[float]]:
     
     Returns:
         (lat, lon) tuple or (None, None) if not found
-    
-    Raises:
-        requests.RequestException: If network error occurs
     """
-    url = "https://nominatim.openstreetmap.org/search"
-    params = {
-        "q": address,
-        "format": "json",
-        "limit": 1,
-        "countrycodes": "fr",  # Limit to France for faster results
-        "addressdetails": 1
-    }
-    headers = {
-        "User-Agent": "VelibTrend/1.0 (Educational Project)"
-    }
-    
+    # 1. Try Nominatim (OpenStreetMap)
     try:
-        # Add small delay to respect Nominatim rate limiting (1 req/sec)
-        time.sleep(1)
+        url = "https://nominatim.openstreetmap.org/search"
+        params = {
+            "q": address,
+            "format": "json",
+            "limit": 1,
+            "countrycodes": "fr",
+            "addressdetails": 1
+        }
+        # More specific User-Agent to avoid blocking
+        headers = {
+            "User-Agent": "VelibTrend_StudentProject/1.0 (https://velibtrend.streamlit.app)"
+        }
         
-        response = requests.get(url, params=params, headers=headers, timeout=10)
-        response.raise_for_status()
-        data = response.json()
+        # Respect rate limiting
+        time.sleep(1.1)
         
-        if data and len(data) > 0:
-            return float(data[0]['lat']), float(data[0]['lon'])
-        
-        return None, None
-    
-    except requests.RequestException as e:
-        print(f"Geocoding error for '{address}': {e}")
-        return None, None
+        response = requests.get(url, params=params, headers=headers, timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            if data and len(data) > 0:
+                return float(data[0]['lat']), float(data[0]['lon'])
+        else:
+            print(f"Nominatim error {response.status_code}: {response.text}")
+            
+    except Exception as e:
+        print(f"Nominatim failed for '{address}': {e}")
+
+    # 2. Fallback: Photon (Komoot) - Excellent for backup
+    try:
+        print(f"Falling back to Photon for: {address}")
+        url = "https://photon.komoot.io/api/"
+        params = {
+            "q": address,
+            "limit": 1,
+            "lang": "fr"
+        }
+        # Photon doesn't strictly require User-Agent but it's good practice
+        response = requests.get(url, params=params, timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            if data and 'features' in data and len(data['features']) > 0:
+                coords = data['features'][0]['geometry']['coordinates']
+                # Photon returns [lon, lat]
+                return float(coords[1]), float(coords[0])
+                
+    except Exception as e:
+        print(f"Photon failed for '{address}': {e}")
+
+    return None, None
 
 
 def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
