@@ -8,9 +8,7 @@
 
 ## 🎥 Project Demo
 
-[**▶️ Watch the Presentation Video**](presentation.mp4)
-
-*(Click the link above to play the video)*
+https://github.com/user-attachments/assets/520c1812-eac0-4121-a270-6714a27c3c5e
 
 ---
 
