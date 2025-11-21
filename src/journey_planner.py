@@ -8,6 +8,7 @@ automatically finding the best Vélib stations and predicting availability.
 import requests
 import numpy as np
 import pandas as pd
+import streamlit as st
 from math import radians, sin, cos, sqrt, atan2
 from typing import Tuple, Dict, Optional, List, Any
 import time
@@ -25,14 +26,13 @@ DOCK_THRESHOLD_MIN = 2   # >= 2 docks = possible
 OSRM_BASE_URL = "https://router.project-osrm.org"
 OSRM_TIMEOUT = 10
 
-# Geocoding cache (LRU cache for 128 most recent addresses)
-@lru_cache(maxsize=128)
-
-
+# Geocoding cache (Streamlit cache for persistence across users/sessions)
+# This is the KEY fix for rate limiting: common addresses are cached for 24h
+@st.cache_data(ttl=86400, show_spinner=False)
 def geocode_address(address: str) -> Tuple[Optional[float], Optional[float]]:
     """
     Convert address to (latitude, longitude) using Nominatim with fallback to Photon.
-    Cached with LRU cache to avoid redundant API calls.
+    Cached with st.cache_data to avoid redundant API calls across all users.
     
     Args:
         address: Address string (e.g., "24 Rue de Rivoli, Paris")
@@ -55,14 +55,17 @@ def geocode_address(address: str) -> Tuple[Optional[float], Optional[float]]:
             "User-Agent": "VelibTrend_StudentProject/1.0 (https://velibtrend.streamlit.app)"
         }
         
-        # Respect rate limiting
+        # Respect rate limiting - essential for Nominatim
         time.sleep(1.1)
         
         response = requests.get(url, params=params, headers=headers, timeout=5)
+        
         if response.status_code == 200:
             data = response.json()
             if data and len(data) > 0:
                 return float(data[0]['lat']), float(data[0]['lon'])
+        elif response.status_code == 429:
+            print(f"Nominatim rate limit hit (429) for '{address}'. Switching to fallback.")
         else:
             print(f"Nominatim error {response.status_code}: {response.text}")
             
