@@ -1,6 +1,6 @@
 # 📘 Project Documentation
 
-Welcome to the documentation for **Paris Pulse (Velib Trend)**.
+Welcome to the documentation for **Velib Trend**.
 This folder contains all the technical details, architecture decisions, and guides for the project.
 
 ## 📚 Documentation Index
