@@ -8,7 +8,9 @@
 
 ## 🎥 Project Demo
 
-<video src="presentation.mp4" controls width="100%"></video>
+[**▶️ Watch the Presentation Video**](presentation.mp4)
+
+*(Click the link above to play the video)*
 
 ---
 
